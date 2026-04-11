@@ -30,6 +30,7 @@ build/
 !**/src/test/**/build/
 CONTEXT.md
 DOMAIN.md
+.env
 
 ### VS Code ###
 .vscode/
