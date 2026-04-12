@@ -2,6 +2,7 @@
 package com.ibpms.domain;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -23,6 +24,14 @@ public class User implements UserDetails {
     @Id
     private String id;
     private String username;
+    /**
+     * Requires `spring.data.mongodb.auto-index-creation=true` for Spring Data
+     * MongoDB to create the unique email index automatically. In environments
+     * where auto-index creation is disabled (commonly production), this index
+     * must be created manually to preserve the uniqueness constraint.
+     */
+    @Indexed(unique = true)
+    private String email;
     private String password;
     private SystemRole role;
     private String departmentId;
