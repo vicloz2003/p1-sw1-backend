@@ -44,6 +44,10 @@ public class SecurityConfig {
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
+                        // SockJS/WebSocket handshakes are established before STOMP CONNECT processing.
+                        // Authentication for messaging is enforced by the WebSocket/STOMP layer,
+                        // so the HTTP handshake endpoint must remain accessible here.
+                        .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())

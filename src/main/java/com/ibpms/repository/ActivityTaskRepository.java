@@ -10,6 +10,7 @@ public interface ActivityTaskRepository extends MongoRepository<ActivityTask, St
     List<ActivityTask> findByAssignedUserIdAndStatus(String userId, TaskStatus status);
     List<ActivityTask> findByProcessInstanceId(String processInstanceId);
     boolean existsByProcessInstanceIdAndStatus(String processInstanceId, TaskStatus status);
+    boolean existsByProcessInstanceIdAndNodeIdAndStatus(String processInstanceId, String nodeId, TaskStatus status);
 }
 
 

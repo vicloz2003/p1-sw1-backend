@@ -86,6 +86,46 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(PolicyNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ProblemDetail handlePolicyNotFound(PolicyNotFoundException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/policy-not-found"));
+        pd.setTitle("Policy not found");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(PolicyNotActiveException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ProblemDetail handlePolicyNotActive(PolicyNotActiveException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/policy-not-active"));
+        pd.setTitle("Policy not active");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(TaskNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ProblemDetail handleTaskNotFound(TaskNotFoundException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/task-not-found"));
+        pd.setTitle("Task not found");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(InvalidTaskStateException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ProblemDetail handleInvalidTaskState(InvalidTaskStateException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/invalid-task-state"));
+        pd.setTitle("Invalid task state");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ProblemDetail handleGeneric(Exception ex, HttpServletRequest request) {
