@@ -9,6 +9,7 @@ import com.ibpms.dto.request.RegisterRequest;
 import com.ibpms.dto.response.LoginResponse;
 import com.ibpms.dto.response.RefreshResponse;
 import com.ibpms.dto.response.RegisterResponse;
+import com.ibpms.domain.enums.SystemRole;
 import com.ibpms.exception.EmailAlreadyExistsException;
 import com.ibpms.exception.InvalidRefreshTokenException;
 import com.ibpms.exception.UsernameAlreadyExistsException;
@@ -79,8 +80,8 @@ public class AuthServiceImpl implements AuthService {
         user.setUsername(request.username());
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
-        user.setRole(request.role());
-        user.setDepartmentId(request.departmentId());
+        user.setRole(SystemRole.EMPLOYEE);
+        user.setDepartmentId(null);
 
         User saved = userRepository.save(user);
         return buildRegisterResponse(saved);
