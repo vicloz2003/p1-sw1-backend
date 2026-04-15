@@ -12,7 +12,6 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
-
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -122,6 +121,36 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         pd.setType(URI("https://example.com/problems/invalid-task-state"));
         pd.setTitle("Invalid task state");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(PolicyInUseException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ProblemDetail handlePolicyInUse(PolicyInUseException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/policy-in-use"));
+        pd.setTitle("Policy in use");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(ProcessInstanceNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ProblemDetail handleProcessInstanceNotFound(ProcessInstanceNotFoundException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/process-instance-not-found"));
+        pd.setTitle("Process instance not found");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ProblemDetail handleUserNotFound(UserNotFoundException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/user-not-found"));
+        pd.setTitle("User not found");
         pd.setInstance(URI(request.getRequestURI()));
         return pd;
     }
