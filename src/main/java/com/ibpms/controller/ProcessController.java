@@ -1,0 +1,41 @@
+package com.ibpms.controller;
+
+import com.ibpms.dto.request.StartProcessRequest;
+import com.ibpms.dto.response.ProcessStatusResponse;
+import com.ibpms.service.api.ProcessService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/processes")
+public class ProcessController {
+
+    private final ProcessService processService;
+
+    public ProcessController(ProcessService processService) {
+        this.processService = processService;
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAuthority('EMPLOYEE')")
+    public ResponseEntity<ProcessStatusResponse> start(@Valid @RequestBody StartProcessRequest request,
+                                                        Authentication authentication) {
+        String userId = (String) authentication.getPrincipal();
+        return ResponseEntity.status(HttpStatus.CREATED).body(processService.startProcess(request, userId));
+    }
+
+    @GetMapping("/{id}/status")
+    public ResponseEntity<ProcessStatusResponse> getStatus(@PathVariable String id) {
+        return ResponseEntity.ok(processService.getStatus(id));
+    }
+}
+
