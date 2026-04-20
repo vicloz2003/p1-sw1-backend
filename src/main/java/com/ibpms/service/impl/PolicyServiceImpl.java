@@ -36,6 +36,13 @@ public class PolicyServiceImpl implements PolicyService {
     }
 
     @Override
+    public List<PolicyResponse> getActive() {
+        return policyRepository.findByStatus(PolicyStatus.ACTIVE).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Override
     public PolicyResponse create(CreatePolicyRequest request, String userId) {
         BusinessPolicy policy = new BusinessPolicy();
         policy.setName(request.name());

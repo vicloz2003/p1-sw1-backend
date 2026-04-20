@@ -8,6 +8,7 @@ import java.util.Map;
 public record TaskResponse(
         String id,
         String nodeId,
+        String nodeLabel,
         String processInstanceId,
         String assignedDepartmentId,
         TaskStatus status,

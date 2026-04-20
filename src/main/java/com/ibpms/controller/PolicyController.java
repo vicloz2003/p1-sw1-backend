@@ -30,6 +30,12 @@ public class PolicyController {
         this.policyService = policyService;
     }
 
+    @GetMapping("/active")
+    @PreAuthorize("hasAnyAuthority('ADMIN_DESIGNER', 'EMPLOYEE')")
+    public ResponseEntity<List<PolicyResponse>> getActive() {
+        return ResponseEntity.ok(policyService.getActive());
+    }
+
     @GetMapping
     public ResponseEntity<List<PolicyResponse>> getAll() {
         return ResponseEntity.ok(policyService.getAll());

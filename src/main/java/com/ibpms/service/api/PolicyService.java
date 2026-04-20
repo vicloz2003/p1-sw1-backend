@@ -11,5 +11,6 @@ public interface PolicyService {
     PolicyResponse create(CreatePolicyRequest request, String userId);
     PolicyResponse update(String id, UpdatePolicyRequest request);
     PolicyResponse publish(String id);
+    List<PolicyResponse> getActive();
 }
 

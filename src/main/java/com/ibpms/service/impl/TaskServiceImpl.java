@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 @Service
 public class TaskServiceImpl implements TaskService {
 
+    private record NodeInfo(Map<String, Object> formSchema, String label) {}
     private final ActivityTaskRepository taskRepository;
     private final ProcessInstanceRepository processInstanceRepository;
     private final BusinessPolicyRepository policyRepository;
@@ -49,13 +50,13 @@ public class TaskServiceImpl implements TaskService {
         combined.addAll(pending);
         combined.addAll(inProgress);
 
-        // Batch-load formSchema: 2 queries regardless of task count
-        Map<String, Map<String, Object>> formSchemaByNodeId = resolveFormSchemas(combined);
+
+        Map<String, NodeInfo> nodeInfoByNodeId = resolveFormSchemas(combined);
 
         return combined.stream()
                 .sorted(Comparator.comparing(ActivityTask::getAssignedAt,
                         Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(t -> toResponse(t, formSchemaByNodeId.get(t.getNodeId())))
+                .map(t -> toResponse(t, nodeInfoByNodeId.get(t.getNodeId())))
                 .toList();
     }
 
@@ -72,54 +73,52 @@ public class TaskServiceImpl implements TaskService {
         task.setStartedAt(LocalDateTime.now());
         ActivityTask saved = taskRepository.save(task);
 
-        Map<String, Map<String, Object>> schemas = resolveFormSchemas(List.of(saved));
-        return toResponse(saved, schemas.get(saved.getNodeId()));
+        Map<String, NodeInfo> nodeInfo = resolveFormSchemas(List.of(saved));
+        return toResponse(saved, nodeInfo.get(saved.getNodeId()));
     }
 
     /**
      * Resolves formSchema for each task via 2 DB queries:
      * tasks → process instances → business policies → node formSchema.
      */
-    private Map<String, Map<String, Object>> resolveFormSchemas(List<ActivityTask> tasks) {
-        if (tasks.isEmpty()) {
-            return Map.of();
-        }
+
+    private Map<String, NodeInfo> resolveFormSchemas(List<ActivityTask> tasks) {
+        if (tasks.isEmpty()) return Map.of();
+
         Set<String> instanceIds = tasks.stream()
                 .map(ActivityTask::getProcessInstanceId)
                 .collect(Collectors.toSet());
         Map<String, ProcessInstance> instancesById = processInstanceRepository
-                .findAllById(instanceIds)
-                .stream()
+                .findAllById(instanceIds).stream()
                 .collect(Collectors.toMap(ProcessInstance::getId, Function.identity()));
 
         Set<String> policyIds = instancesById.values().stream()
                 .map(ProcessInstance::getBusinessPolicyId)
                 .collect(Collectors.toSet());
         Map<String, BusinessPolicy> policiesById = policyRepository
-                .findAllById(policyIds)
-                .stream()
+                .findAllById(policyIds).stream()
                 .collect(Collectors.toMap(BusinessPolicy::getId, Function.identity()));
 
-        // nodeId → formSchema (across all relevant policies)
-        Map<String, Map<String, Object>> schemaByNodeId = policiesById.values().stream()
-                .flatMap(p -> p.getNodes() != null ? p.getNodes().stream() : java.util.stream.Stream.empty())
-                .filter(n -> n.getFormSchema() != null)
+        return policiesById.values().stream()
+                .flatMap(p -> p.getNodes() != null
+                        ? p.getNodes().stream() : java.util.stream.Stream.empty())
                 .collect(Collectors.toMap(
                         ActivityNode::getId,
-                        ActivityNode::getFormSchema,
-                        (a, b) -> a   // keep first on duplicate nodeId (edge case)
+                        n -> new NodeInfo(n.getFormSchema(), n.getLabel()),
+                        (a, b) -> a
                 ));
-        return schemaByNodeId;
     }
 
-    private TaskResponse toResponse(ActivityTask task, Map<String, Object> formSchema) {
+
+    private TaskResponse toResponse(ActivityTask task, NodeInfo info) {
         return new TaskResponse(
                 task.getId(),
                 task.getNodeId(),
+                info != null ? info.label() : task.getNodeId(),
                 task.getProcessInstanceId(),
                 task.getAssignedDepartmentId(),
                 task.getStatus(),
-                formSchema,
+                info != null ? info.formSchema() : null,
                 task.getAssignedAt()
         );
     }
