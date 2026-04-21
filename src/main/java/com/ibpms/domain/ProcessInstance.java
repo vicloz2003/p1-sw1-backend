@@ -22,6 +22,7 @@ public class ProcessInstance {
     private String businessPolicyId;
     private String currentNodeId;
     private String initiatedBy;
+    private String clientId;
     private InstanceStatus status;
     private Map<String, Object> contextData;
     private LocalDateTime startedAt;

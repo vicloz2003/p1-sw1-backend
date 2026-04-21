@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/processes")
 public class ProcessController {
@@ -36,6 +38,14 @@ public class ProcessController {
     @GetMapping("/{id}/status")
     public ResponseEntity<ProcessStatusResponse> getStatus(@PathVariable String id) {
         return ResponseEntity.ok(processService.getStatus(id));
+    }
+
+    @GetMapping("/my")
+    @PreAuthorize("hasAuthority('CLIENT')")
+    public ResponseEntity<List<ProcessStatusResponse>> getMyProcesses(
+            Authentication authentication) {
+        String clientId = (String) authentication.getPrincipal();
+        return ResponseEntity.ok(processService.getByClientId(clientId));
     }
 }
 

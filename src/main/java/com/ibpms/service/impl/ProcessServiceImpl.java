@@ -10,6 +10,7 @@ import com.ibpms.service.api.ProcessService;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
+import java.util.List;
 
 @Service
 public class ProcessServiceImpl implements ProcessService {
@@ -30,6 +31,8 @@ public class ProcessServiceImpl implements ProcessService {
                 userId,
                 request.initialData() != null ? request.initialData() : Collections.emptyMap()
         );
+        instance.setClientId(request.clientId());
+        processInstanceRepository.save(instance);
         return toStatusResponse(instance);
     }
 
@@ -46,8 +49,18 @@ public class ProcessServiceImpl implements ProcessService {
                 instance.getId(),
                 instance.getCurrentNodeId(),
                 instance.getStatus(),
-                instance.getStartedAt()
+                instance.getStartedAt(),
+                instance.getClientId()
         );
+    }
+
+    @Override
+    public List<ProcessStatusResponse> getByClientId(String clientId) {
+        return processInstanceRepository
+                .findByClientId(clientId)
+                .stream()
+                .map(this::toStatusResponse)
+                .toList();
     }
 }
 

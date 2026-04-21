@@ -9,6 +9,7 @@ public interface ProcessInstanceRepository extends MongoRepository<ProcessInstan
     boolean existsByBusinessPolicyIdAndStatus(String businessPolicyId, InstanceStatus status);
     List<ProcessInstance> findByBusinessPolicyId(String businessPolicyId);
     List<ProcessInstance> findByStatus(InstanceStatus status);
+    List<ProcessInstance> findByClientId(String clientId);
 }
 
 

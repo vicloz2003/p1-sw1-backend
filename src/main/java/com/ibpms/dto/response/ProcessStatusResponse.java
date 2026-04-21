@@ -8,6 +8,7 @@ public record ProcessStatusResponse(
         String processInstanceId,
         String currentNodeId,
         InstanceStatus status,
-        LocalDateTime startedAt
+        LocalDateTime startedAt,
+        String clientId
 ) {}
 

@@ -6,6 +6,7 @@ import java.util.Map;
 
 public record StartProcessRequest(
         @NotBlank String policyId,
-        Map<String, Object> initialData
+        Map<String, Object> initialData,
+        String clientId
 ) {}
 
