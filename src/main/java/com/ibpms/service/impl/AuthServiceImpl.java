@@ -80,7 +80,11 @@ public class AuthServiceImpl implements AuthService {
         user.setUsername(request.username());
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
-        user.setRole(SystemRole.EMPLOYEE);
+        SystemRole assignedRole = SystemRole.EMPLOYEE;
+        if ("CLIENT".equals(request.role())) {
+            assignedRole = SystemRole.CLIENT;
+        }
+        user.setRole(assignedRole);
         user.setDepartmentId(null);
 
         User saved = userRepository.save(user);

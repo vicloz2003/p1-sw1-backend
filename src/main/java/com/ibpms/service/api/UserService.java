@@ -8,5 +8,6 @@ import java.util.List;
 public interface UserService {
     List<UserResponse> getAll();
     UserResponse assignDepartment(String userId, AssignDepartmentRequest request);
+    List<UserResponse> searchByEmail(String email);
 }
 

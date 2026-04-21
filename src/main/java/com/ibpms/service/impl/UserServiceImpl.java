@@ -35,6 +35,17 @@ public class UserServiceImpl implements UserService {
         return toResponse(userRepository.save(user));
     }
 
+    @Override
+    public List<UserResponse> searchByEmail(String email) {
+        return userRepository.findByEmailContainingIgnoreCase(email)
+                .stream()
+                .map(u -> new UserResponse(
+                        u.getId(), u.getUsername(),
+                        u.getEmail(), u.getRole().name(),
+                        u.getDepartmentId()))
+                .toList();
+    }
+
     private UserResponse toResponse(User user) {
         return new UserResponse(
                 user.getId(),

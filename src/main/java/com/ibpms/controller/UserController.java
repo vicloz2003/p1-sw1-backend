@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -37,6 +38,13 @@ public class UserController {
             @PathVariable String id,
             @Valid @RequestBody AssignDepartmentRequest request) {
         return ResponseEntity.ok(userService.assignDepartment(id, request));
+    }
+
+    @GetMapping("/search")
+    @PreAuthorize("hasAnyAuthority('ADMIN_DESIGNER', 'EMPLOYEE')")
+    public ResponseEntity<List<UserResponse>> search(
+            @RequestParam String email) {
+        return ResponseEntity.ok(userService.searchByEmail(email));
     }
 }
 
