@@ -13,6 +13,7 @@ public record CreatePolicyRequest(
         String description,
         @NotNull List<ActivityPartition> partitions,
         @NotNull List<ActivityNode> nodes,
-        @NotNull List<ControlFlow> flows
+        @NotNull List<ControlFlow> flows,
+        String bpmnXml
 ) {}
 

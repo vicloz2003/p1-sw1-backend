@@ -41,6 +41,11 @@ public class PolicyController {
         return ResponseEntity.ok(policyService.getAll());
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<PolicyResponse> getById(@PathVariable String id) {
+        return ResponseEntity.ok(policyService.getById(id));
+    }
+
     @PostMapping
     public ResponseEntity<PolicyResponse> create(@Valid @RequestBody CreatePolicyRequest request,
                                                   Authentication authentication) {

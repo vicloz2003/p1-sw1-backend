@@ -18,6 +18,7 @@ public record PolicyResponse(
         List<ActivityNode> nodes,
         List<ControlFlow> flows,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        String bpmnXml
 ) {}
 

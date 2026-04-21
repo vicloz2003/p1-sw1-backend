@@ -26,6 +26,7 @@ public class BusinessPolicy {
     private List<ActivityPartition> partitions;
     private List<ActivityNode> nodes;
     private List<ControlFlow> flows;
+    private String bpmnXml;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -34,6 +34,12 @@ public class PolicyServiceImpl implements PolicyService {
                 .map(this::toResponse)
                 .toList();
     }
+    @Override
+    public PolicyResponse getById(String id) {
+        BusinessPolicy policy = policyRepository.findById(id)
+                .orElseThrow(() -> new PolicyNotFoundException("Policy not found: " + id));
+        return toResponse(policy);
+    }
 
     @Override
     public List<PolicyResponse> getActive() {
@@ -52,6 +58,7 @@ public class PolicyServiceImpl implements PolicyService {
         policy.setPartitions(request.partitions());
         policy.setNodes(request.nodes());
         policy.setFlows(request.flows());
+        policy.setBpmnXml(request.bpmnXml());
         policy.setCreatedAt(LocalDateTime.now());
         policy.setUpdatedAt(LocalDateTime.now());
         return toResponse(policyRepository.save(policy));
@@ -69,6 +76,7 @@ public class PolicyServiceImpl implements PolicyService {
         policy.setPartitions(request.partitions());
         policy.setNodes(request.nodes());
         policy.setFlows(request.flows());
+        policy.setBpmnXml(request.bpmnXml());
         policy.setUpdatedAt(LocalDateTime.now());
         return toResponse(policyRepository.save(policy));
     }
@@ -86,7 +94,8 @@ public class PolicyServiceImpl implements PolicyService {
         return new PolicyResponse(
                 p.getId(), p.getName(), p.getDescription(), p.getCreatedBy(),
                 p.getStatus(), p.getPartitions(), p.getNodes(), p.getFlows(),
-                p.getCreatedAt(), p.getUpdatedAt()
+                p.getCreatedAt(), p.getUpdatedAt(),
+                p.getBpmnXml()
         );
     }
 }
