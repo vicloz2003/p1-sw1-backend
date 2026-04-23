@@ -35,6 +35,7 @@ public class User implements UserDetails {
     private String password;
     private SystemRole role;
     private String departmentId;
+    private Boolean enabled;
 
 
     @Override
@@ -44,6 +45,6 @@ public class User implements UserDetails {
     @Override public boolean isAccountNonExpired() { return true; }
     @Override public boolean isAccountNonLocked() { return true; }
     @Override public boolean isCredentialsNonExpired() { return true; }
-    @Override public boolean isEnabled() { return true; }
+    @Override public boolean isEnabled() { return !Boolean.FALSE.equals(enabled); }
 }
 

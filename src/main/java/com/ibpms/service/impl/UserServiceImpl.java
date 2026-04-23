@@ -1,7 +1,9 @@
 package com.ibpms.service.impl;
 
 import com.ibpms.domain.User;
+import com.ibpms.domain.enums.SystemRole;
 import com.ibpms.dto.request.AssignDepartmentRequest;
+import com.ibpms.dto.request.UpdateUserRequest;
 import com.ibpms.dto.response.UserResponse;
 import com.ibpms.exception.UserNotFoundException;
 import com.ibpms.repository.UserRepository;
@@ -39,11 +41,33 @@ public class UserServiceImpl implements UserService {
     public List<UserResponse> searchByEmail(String email) {
         return userRepository.findByEmailContainingIgnoreCase(email)
                 .stream()
-                .map(u -> new UserResponse(
-                        u.getId(), u.getUsername(),
-                        u.getEmail(), u.getRole().name(),
-                        u.getDepartmentId()))
+                .map(this::toResponse)
                 .toList();
+    }
+
+    @Override
+    public UserResponse updateUser(String id, UpdateUserRequest request) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException(id));
+        user.setUsername(request.username());
+        user.setRole(SystemRole.valueOf(request.role()));
+        return toResponse(userRepository.save(user));
+    }
+
+    @Override
+    public UserResponse toggleStatus(String id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException(id));
+        user.setEnabled(!user.isEnabled());
+        return toResponse(userRepository.save(user));
+    }
+
+    @Override
+    public void deleteUser(String id) {
+        if (!userRepository.existsById(id)) {
+            throw new UserNotFoundException(id);
+        }
+        userRepository.deleteById(id);
     }
 
     private UserResponse toResponse(User user) {
@@ -52,7 +76,8 @@ public class UserServiceImpl implements UserService {
                 user.getUsername(),
                 user.getEmail(),
                 user.getRole().name(),
-                user.getDepartmentId()
+                user.getDepartmentId(),
+                user.isEnabled()
         );
     }
 }

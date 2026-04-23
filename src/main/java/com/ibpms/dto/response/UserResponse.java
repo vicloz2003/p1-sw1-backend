@@ -5,6 +5,7 @@ public record UserResponse(
         String username,
         String email,
         String role,
-        String departmentId
+        String departmentId,
+        boolean enabled
 ) {}
 
