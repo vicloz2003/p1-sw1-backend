@@ -11,6 +11,7 @@ import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -38,7 +39,11 @@ public class DecisionEvaluator implements NodeEvaluator {
         StandardEvaluationContext ctx = new StandardEvaluationContext();
         ctx.setVariable("data", instance.getContextData());
 
+        // Conditional flows (with a guard) are sorted before the default/no-guard
+        // flow, so the default branch only fires when no condition matches.
         return flowRouter.getOutgoingFlows(node.getId(), policy).stream()
+                .sorted(Comparator.comparingInt(f ->
+                        (f.getGuardCondition() == null || f.getGuardCondition().isBlank()) ? 1 : 0))
                 .filter(flow -> evaluateGuard(flow, ctx))
                 .map(ControlFlow::getTargetNodeId)
                 .limit(1)
