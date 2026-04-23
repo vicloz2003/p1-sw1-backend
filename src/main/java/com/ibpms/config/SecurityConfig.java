@@ -55,6 +55,8 @@ public class SecurityConfig {
                         // SockJS/WebSocket handshakes are established before STOMP CONNECT processing.
                         // Authentication for messaging is enforced by the WebSocket/STOMP layer,
                         // so the HTTP handshake endpoint must remain accessible here.
+                        .requestMatchers(HttpMethod.GET, "/ws/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/ws/**").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -83,10 +85,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
-                "http://localhost:4200",
-                "http://localhost:3001"
-        ));
+        //config.setAllowedOrigins(List.of(
+                //"http://localhost:4200",
+                //"http://localhost:*"
+        //));
+        // Reemplaza todo el bloque de origins por:
+        config.setAllowedOriginPatterns(List.of("http://localhost:*"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
