@@ -46,9 +46,9 @@ public class TaskServiceImpl implements TaskService {
         List<ActivityTask> inProgress = taskRepository
                 .findByAssignedUserIdAndStatus(userId, TaskStatus.IN_PROGRESS);
         List<ActivityTask> completed = taskRepository          // ← AGREGAR
-                .findByAssignedUserIdAndStatus(userId, TaskStatus.COMPLETED);
+                .findByAssignedDepartmentIdAndStatus(departmentId, TaskStatus.COMPLETED);
 
-        List<ActivityTask> combined = new ArrayList<>(pending.size() + inProgress.size());
+        List<ActivityTask> combined = new ArrayList<>(pending.size() + inProgress.size() + completed.size());
         combined.addAll(pending);
         combined.addAll(inProgress);
         combined.addAll(completed);

@@ -24,6 +24,9 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Override
     public Department create(CreateDepartmentRequest request) {
+        if (departmentRepository.existsByName(request.name())) {
+            throw new RuntimeException("Ya existe un departamento con ese nombre: " + request.name());
+        }
         Department department = new Department(null, request.name(), request.description());
         return departmentRepository.save(department);
     }
