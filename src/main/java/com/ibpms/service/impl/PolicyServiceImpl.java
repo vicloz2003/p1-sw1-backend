@@ -50,6 +50,9 @@ public class PolicyServiceImpl implements PolicyService {
 
     @Override
     public PolicyResponse create(CreatePolicyRequest request, String userId) {
+        if (policyRepository.existsByName(request.name())) {
+            throw new RuntimeException("Ya existe una política con ese nombre: " + request.name());
+        }
         BusinessPolicy policy = new BusinessPolicy();
         policy.setName(request.name());
         policy.setDescription(request.description());
@@ -88,6 +91,16 @@ public class PolicyServiceImpl implements PolicyService {
         policy.setStatus(PolicyStatus.ACTIVE);
         policy.setUpdatedAt(LocalDateTime.now());
         return toResponse(policyRepository.save(policy));
+    }
+
+    @Override
+    public void deletePolicy(String id) {
+        BusinessPolicy policy = policyRepository.findById(id)
+                .orElseThrow(() -> new PolicyNotFoundException("Policy not found: " + id));
+        if (processInstanceRepository.existsByBusinessPolicyIdAndStatus(id, InstanceStatus.ACTIVE)) {
+            throw new PolicyInUseException("No se puede eliminar una política con trámites en proceso.");
+        }
+        policyRepository.deleteById(id);
     }
 
     private PolicyResponse toResponse(BusinessPolicy p) {

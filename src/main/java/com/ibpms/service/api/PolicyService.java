@@ -13,5 +13,6 @@ public interface PolicyService {
     PolicyResponse publish(String id);
     List<PolicyResponse> getActive();
     PolicyResponse getById(String id);
+    void deletePolicy(String id);
 }
 
