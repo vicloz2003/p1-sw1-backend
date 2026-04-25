@@ -5,6 +5,7 @@ import com.ibpms.dto.request.StartProcessRequest;
 import com.ibpms.dto.response.ProcessStatusResponse;
 import com.ibpms.engine.api.WorkflowEngine;
 import com.ibpms.exception.ProcessInstanceNotFoundException;
+import com.ibpms.repository.BusinessPolicyRepository;
 import com.ibpms.repository.ProcessInstanceRepository;
 import com.ibpms.service.api.ProcessService;
 import org.springframework.stereotype.Service;
@@ -17,11 +18,14 @@ public class ProcessServiceImpl implements ProcessService {
 
     private final WorkflowEngine workflowEngine;
     private final ProcessInstanceRepository processInstanceRepository;
+    private final BusinessPolicyRepository policyRepository;
 
     public ProcessServiceImpl(WorkflowEngine workflowEngine,
-                              ProcessInstanceRepository processInstanceRepository) {
+                              ProcessInstanceRepository processInstanceRepository,
+                              BusinessPolicyRepository policyRepository) {
         this.workflowEngine = workflowEngine;
         this.processInstanceRepository = processInstanceRepository;
+        this.policyRepository = policyRepository;
     }
 
     @Override
@@ -45,12 +49,26 @@ public class ProcessServiceImpl implements ProcessService {
     }
 
     private ProcessStatusResponse toStatusResponse(ProcessInstance instance) {
+        String policyName = "";
+        String currentNodeLabel = instance.getCurrentNodeId();
+
+        var policy = policyRepository.findById(instance.getBusinessPolicyId());
+        if (policy.isPresent()) {
+            policyName = policy.get().getName();
+            currentNodeLabel = policy.get().getNodes().stream()
+                    .filter(n -> n.getId().equals(instance.getCurrentNodeId()))
+                    .map(n -> n.getLabel())
+                    .findFirst()
+                    .orElse(instance.getCurrentNodeId());
+        }
         return new ProcessStatusResponse(
                 instance.getId(),
                 instance.getCurrentNodeId(),
+                currentNodeLabel,
                 instance.getStatus(),
                 instance.getStartedAt(),
-                instance.getClientId()
+                instance.getClientId(),
+                policyName
         );
     }
 

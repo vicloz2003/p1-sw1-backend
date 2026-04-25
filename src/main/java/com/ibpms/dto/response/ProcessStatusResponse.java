@@ -7,8 +7,10 @@ import java.time.LocalDateTime;
 public record ProcessStatusResponse(
         String processInstanceId,
         String currentNodeId,
+        String currentNodeLabel,
         InstanceStatus status,
         LocalDateTime startedAt,
-        String clientId
+        String clientId,
+        String policyName
 ) {}
 
