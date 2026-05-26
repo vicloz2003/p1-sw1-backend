@@ -155,6 +155,16 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(FormTemplateNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ProblemDetail handleFormTemplateNotFound(FormTemplateNotFoundException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/form-template-not-found"));
+        pd.setTitle("Form template not found");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ProblemDetail handleGeneric(Exception ex, HttpServletRequest request) {
