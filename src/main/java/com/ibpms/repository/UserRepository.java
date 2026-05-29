@@ -11,6 +11,10 @@ public interface UserRepository extends MongoRepository<User, String> {
     boolean existsByEmail(String email);
     boolean existsByUsername(String username);
     List<User> findByEmailContainingIgnoreCase(String email);
+    /** All users assigned to a specific department. */
+    List<User> findByDepartmentId(String departmentId);
+    /** Users whose FCM token is set (mobile device registered). */
+    List<User> findByFcmTokenIsNotNull();
 }
 
 

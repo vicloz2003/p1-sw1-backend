@@ -80,6 +80,13 @@
 			<optional>true</optional>
 		</dependency>
 
+		<!-- Firebase Admin SDK (Push Notifications — RF-28 to RF-31) -->
+		<dependency>
+			<groupId>com.google.firebase</groupId>
+			<artifactId>firebase-admin</artifactId>
+			<version>9.3.0</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>

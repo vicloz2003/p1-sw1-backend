@@ -1,6 +1,7 @@
 package com.ibpms.service.impl;
 
 import com.ibpms.domain.User;
+import com.ibpms.dto.request.UpdateFcmTokenRequest;
 import com.ibpms.dto.request.UpdateProfileEmailRequest;
 import com.ibpms.dto.request.UpdateProfilePasswordRequest;
 import com.ibpms.dto.response.UserResponse;
@@ -11,6 +12,8 @@ import com.ibpms.service.api.ProfileService;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
 
 @Service
 public class ProfileServiceImpl implements ProfileService {
@@ -58,6 +61,15 @@ public class ProfileServiceImpl implements ProfileService {
         }
 
         user.setPassword(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+    }
+
+    @Override
+    public void updateFcmToken(String userId, UpdateFcmTokenRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        user.setFcmToken(request.fcmToken());
+        user.setFcmTokenUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
     }
 

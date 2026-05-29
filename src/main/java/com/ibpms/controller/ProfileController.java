@@ -1,5 +1,6 @@
 package com.ibpms.controller;
 
+import com.ibpms.dto.request.UpdateFcmTokenRequest;
 import com.ibpms.dto.request.UpdateProfileEmailRequest;
 import com.ibpms.dto.request.UpdateProfilePasswordRequest;
 import com.ibpms.dto.response.UserResponse;
@@ -43,6 +44,19 @@ public class ProfileController {
             @Valid @RequestBody UpdateProfilePasswordRequest request) {
         String userId = (String) authentication.getPrincipal();
         profileService.updatePassword(userId, request);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Registers or refreshes the Firebase Cloud Messaging token for the caller's
+     * mobile device (RF-28). Flutter calls this right after login.
+     */
+    @PatchMapping("/fcm-token")
+    public ResponseEntity<Void> updateFcmToken(
+            Authentication authentication,
+            @Valid @RequestBody UpdateFcmTokenRequest request) {
+        String userId = (String) authentication.getPrincipal();
+        profileService.updateFcmToken(userId, request);
         return ResponseEntity.noContent().build();
     }
 }

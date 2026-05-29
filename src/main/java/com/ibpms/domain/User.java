@@ -7,6 +7,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import com.ibpms.domain.enums.SystemRole;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -37,6 +38,9 @@ public class User implements UserDetails {
     private String departmentId;
     private Boolean enabled;
 
+    /** Firebase Cloud Messaging token — null if the user has no mobile device registered (RF-28). */
+    private String fcmToken;
+    private LocalDateTime fcmTokenUpdatedAt;
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

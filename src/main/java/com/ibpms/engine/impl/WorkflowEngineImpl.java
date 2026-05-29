@@ -8,6 +8,7 @@ import com.ibpms.domain.enums.InstanceStatus;
 import com.ibpms.domain.enums.NodeType;
 import com.ibpms.domain.enums.PolicyStatus;
 import com.ibpms.domain.enums.TaskStatus;
+import com.ibpms.domain.User;
 import com.ibpms.dto.response.ProcessStateNotificationDto;
 import com.ibpms.engine.api.WorkflowEngine;
 import com.ibpms.engine.evaluator.NodeEvaluator;
@@ -19,6 +20,8 @@ import com.ibpms.exception.TaskNotFoundException;
 import com.ibpms.repository.ActivityTaskRepository;
 import com.ibpms.repository.BusinessPolicyRepository;
 import com.ibpms.repository.ProcessInstanceRepository;
+import com.ibpms.repository.UserRepository;
+import com.ibpms.service.impl.PushNotificationService;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -48,19 +51,25 @@ public class WorkflowEngineImpl implements WorkflowEngine {
     private final List<NodeEvaluator> evaluators;
     private final FlowRouter flowRouter;
     private final SimpMessagingTemplate messagingTemplate;
+    private final UserRepository userRepository;
+    private final PushNotificationService pushNotificationService;
 
     public WorkflowEngineImpl(BusinessPolicyRepository policyRepository,
                                ProcessInstanceRepository instanceRepository,
                                ActivityTaskRepository taskRepository,
                                List<NodeEvaluator> evaluators,
                                FlowRouter flowRouter,
-                               SimpMessagingTemplate messagingTemplate) {
+                               SimpMessagingTemplate messagingTemplate,
+                               UserRepository userRepository,
+                               PushNotificationService pushNotificationService) {
         this.policyRepository = policyRepository;
         this.instanceRepository = instanceRepository;
         this.taskRepository = taskRepository;
         this.evaluators = evaluators;
         this.flowRouter = flowRouter;
         this.messagingTemplate = messagingTemplate;
+        this.userRepository = userRepository;
+        this.pushNotificationService = pushNotificationService;
     }
 
     // -------------------------------------------------------------------------
@@ -155,6 +164,26 @@ public class WorkflowEngineImpl implements WorkflowEngine {
                 instance.getStatus()
         );
         messagingTemplate.convertAndSend("/topic/process/" + instance.getId(), stateNotification);
+
+        // FCM push to the CLIENT who initiated the process (RF-30)
+        if (instance.getClientId() != null) {
+            userRepository.findById(instance.getClientId()).ifPresent(client -> {
+                String fcmToken = client.getFcmToken();
+                if (fcmToken != null && !fcmToken.isBlank()) {
+                    pushNotificationService.sendToToken(
+                            fcmToken,
+                            "Estado de tu trámite actualizado",
+                            "Tu trámite ahora está en: " + currentNodeLabel
+                                    + " (" + instance.getStatus().name() + ").",
+                            java.util.Map.of(
+                                    "processInstanceId", instance.getId(),
+                                    "currentNodeLabel", currentNodeLabel,
+                                    "status", instance.getStatus().name()
+                            )
+                    );
+                }
+            });
+        }
     }
 
     // -------------------------------------------------------------------------
