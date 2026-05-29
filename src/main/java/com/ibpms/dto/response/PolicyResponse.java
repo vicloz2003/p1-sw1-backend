@@ -3,6 +3,7 @@ package com.ibpms.dto.response;
 import com.ibpms.domain.ActivityNode;
 import com.ibpms.domain.ActivityPartition;
 import com.ibpms.domain.ControlFlow;
+import com.ibpms.domain.DocumentRequirement;
 import com.ibpms.domain.enums.PolicyStatus;
 
 import java.time.LocalDateTime;
@@ -19,6 +20,9 @@ public record PolicyResponse(
         List<ControlFlow> flows,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        String bpmnXml
+        String bpmnXml,
+        /** Document requirements embedded in the policy (RF-01). */
+        List<DocumentRequirement> documentRequirements,
+        /** Semantic NLP tags for policy classification (RF-11). */
+        List<String> tags
 ) {}
-

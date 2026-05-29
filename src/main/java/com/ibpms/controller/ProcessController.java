@@ -1,7 +1,9 @@
 package com.ibpms.controller;
 
 import com.ibpms.dto.request.StartProcessRequest;
+import com.ibpms.dto.response.DocumentResponse;
 import com.ibpms.dto.response.ProcessStatusResponse;
+import com.ibpms.service.api.DocumentService;
 import com.ibpms.service.api.ProcessService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -22,9 +24,11 @@ import java.util.List;
 public class ProcessController {
 
     private final ProcessService processService;
+    private final DocumentService documentService;
 
-    public ProcessController(ProcessService processService) {
+    public ProcessController(ProcessService processService, DocumentService documentService) {
         this.processService = processService;
+        this.documentService = documentService;
     }
 
     @PostMapping
@@ -46,6 +50,15 @@ public class ProcessController {
             Authentication authentication) {
         String clientId = (String) authentication.getPrincipal();
         return ResponseEntity.ok(processService.getByClientId(clientId));
+    }
+
+    /**
+     * RF-04: List all (non-deleted) documents for a specific process instance.
+     * Accessible by the owner client, any employee, and the admin.
+     */
+    @GetMapping("/{instanceId}/documents")
+    public ResponseEntity<List<DocumentResponse>> getDocuments(@PathVariable String instanceId) {
+        return ResponseEntity.ok(documentService.listByInstance(instanceId));
     }
 }
 

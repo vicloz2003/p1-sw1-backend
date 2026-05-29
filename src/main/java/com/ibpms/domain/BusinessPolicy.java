@@ -29,5 +29,17 @@ public class BusinessPolicy {
     private String bpmnXml;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    /**
+     * Documents that must or may be submitted during this policy's lifecycle (RF-01).
+     * Embedded subdocuments — no separate collection.
+     */
+    private List<DocumentRequirement> documentRequirements;
+
+    /**
+     * Semantic tags for NLP policy classification (RF-11).
+     * e.g. ["credito", "prestamo", "financiamiento"]
+     */
+    private List<String> tags;
 }
 

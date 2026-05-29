@@ -1,5 +1,6 @@
 package com.ibpms.service.api;
 
+import com.ibpms.domain.DocumentRequirement;
 import com.ibpms.dto.request.CreatePolicyRequest;
 import com.ibpms.dto.request.UpdatePolicyRequest;
 import com.ibpms.dto.response.PolicyResponse;
@@ -14,5 +15,14 @@ public interface PolicyService {
     List<PolicyResponse> getActive();
     PolicyResponse getById(String id);
     void deletePolicy(String id);
+
+    // ── Document requirement management (RF-01) ───────────────────────────────
+    PolicyResponse addDocumentRequirement(String policyId, DocumentRequirement requirement);
+    PolicyResponse updateDocumentRequirement(String policyId, String reqId,
+                                             DocumentRequirement requirement);
+    PolicyResponse removeDocumentRequirement(String policyId, String reqId);
+
+    // ── Semantic tags for NLP classification (RF-11) ─────────────────────────
+    PolicyResponse updateTags(String policyId, List<String> tags);
 }
 

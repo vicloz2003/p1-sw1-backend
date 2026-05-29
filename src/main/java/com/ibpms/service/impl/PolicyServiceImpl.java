@@ -1,6 +1,7 @@
 package com.ibpms.service.impl;
 
 import com.ibpms.domain.BusinessPolicy;
+import com.ibpms.domain.DocumentRequirement;
 import com.ibpms.domain.enums.InstanceStatus;
 import com.ibpms.domain.enums.PolicyStatus;
 import com.ibpms.dto.request.CreatePolicyRequest;
@@ -15,7 +16,9 @@ import com.ibpms.service.api.PolicyService;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class PolicyServiceImpl implements PolicyService {
@@ -109,12 +112,85 @@ public class PolicyServiceImpl implements PolicyService {
         policyRepository.deleteById(id);
     }
 
+    // ── Document requirement management (RF-01) ───────────────────────────────
+
+    @Override
+    public PolicyResponse addDocumentRequirement(String policyId, DocumentRequirement requirement) {
+        BusinessPolicy policy = policyRepository.findById(policyId)
+                .orElseThrow(() -> new PolicyNotFoundException("Policy not found: " + policyId));
+        if (requirement.getId() == null || requirement.getId().isBlank()) {
+            requirement.setId(UUID.randomUUID().toString());
+        }
+        if (policy.getDocumentRequirements() == null) {
+            policy.setDocumentRequirements(new ArrayList<>());
+        }
+        policy.getDocumentRequirements().add(requirement);
+        policy.setUpdatedAt(LocalDateTime.now());
+        return toResponse(policyRepository.save(policy));
+    }
+
+    @Override
+    public PolicyResponse updateDocumentRequirement(String policyId, String reqId,
+                                                     DocumentRequirement requirement) {
+        BusinessPolicy policy = policyRepository.findById(policyId)
+                .orElseThrow(() -> new PolicyNotFoundException("Policy not found: " + policyId));
+        if (policy.getDocumentRequirements() == null) {
+            throw new IllegalArgumentException("No document requirements found for policy: " + policyId);
+        }
+        boolean replaced = false;
+        List<DocumentRequirement> updated = new ArrayList<>();
+        for (DocumentRequirement dr : policy.getDocumentRequirements()) {
+            if (dr.getId().equals(reqId)) {
+                requirement.setId(reqId);
+                updated.add(requirement);
+                replaced = true;
+            } else {
+                updated.add(dr);
+            }
+        }
+        if (!replaced) {
+            throw new IllegalArgumentException(
+                    "Document requirement not found: " + reqId + " in policy: " + policyId);
+        }
+        policy.setDocumentRequirements(updated);
+        policy.setUpdatedAt(LocalDateTime.now());
+        return toResponse(policyRepository.save(policy));
+    }
+
+    @Override
+    public PolicyResponse removeDocumentRequirement(String policyId, String reqId) {
+        BusinessPolicy policy = policyRepository.findById(policyId)
+                .orElseThrow(() -> new PolicyNotFoundException("Policy not found: " + policyId));
+        if (processInstanceRepository.existsByBusinessPolicyIdAndStatus(policyId, InstanceStatus.ACTIVE)) {
+            throw new PolicyInUseException(
+                    "Cannot modify document requirements of a policy with active instances.");
+        }
+        if (policy.getDocumentRequirements() != null) {
+            policy.getDocumentRequirements().removeIf(dr -> dr.getId().equals(reqId));
+        }
+        policy.setUpdatedAt(LocalDateTime.now());
+        return toResponse(policyRepository.save(policy));
+    }
+
+    // ── NLP Tags (RF-11) ──────────────────────────────────────────────────────
+
+    @Override
+    public PolicyResponse updateTags(String policyId, List<String> tags) {
+        BusinessPolicy policy = policyRepository.findById(policyId)
+                .orElseThrow(() -> new PolicyNotFoundException("Policy not found: " + policyId));
+        policy.setTags(tags);
+        policy.setUpdatedAt(LocalDateTime.now());
+        return toResponse(policyRepository.save(policy));
+    }
+
     private PolicyResponse toResponse(BusinessPolicy p) {
         return new PolicyResponse(
                 p.getId(), p.getName(), p.getDescription(), p.getCreatedBy(),
                 p.getStatus(), p.getPartitions(), p.getNodes(), p.getFlows(),
                 p.getCreatedAt(), p.getUpdatedAt(),
-                p.getBpmnXml()
+                p.getBpmnXml(),
+                p.getDocumentRequirements(),
+                p.getTags()
         );
     }
 }

@@ -156,6 +156,26 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(DocumentNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ProblemDetail handleDocumentNotFound(DocumentNotFoundException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/document-not-found"));
+        pd.setTitle("Document not found");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(DocumentAccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ProblemDetail handleDocumentAccessDenied(DocumentAccessDeniedException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/document-access-denied"));
+        pd.setTitle("Document access denied");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
     @ExceptionHandler(DiagramInvalidException.class)
     public ProblemDetail handleDiagramInvalid(DiagramInvalidException ex, HttpServletRequest request) {
         // 422 Unprocessable Entity — ProblemDetail.forStatus accepts HttpStatusCode
