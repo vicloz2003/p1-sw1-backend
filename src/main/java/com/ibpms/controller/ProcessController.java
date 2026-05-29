@@ -28,7 +28,7 @@ public class ProcessController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('EMPLOYEE')")
+    @PreAuthorize("hasAnyAuthority('EMPLOYEE', 'CLIENT')")
     public ResponseEntity<ProcessStatusResponse> start(@Valid @RequestBody StartProcessRequest request,
                                                         Authentication authentication) {
         String userId = (String) authentication.getPrincipal();

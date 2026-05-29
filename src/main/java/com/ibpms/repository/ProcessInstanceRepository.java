@@ -8,8 +8,11 @@ import java.util.List;
 public interface ProcessInstanceRepository extends MongoRepository<ProcessInstance, String> {
     boolean existsByBusinessPolicyIdAndStatus(String businessPolicyId, InstanceStatus status);
     List<ProcessInstance> findByBusinessPolicyId(String businessPolicyId);
+    List<ProcessInstance> findByBusinessPolicyIdAndStatus(String businessPolicyId, InstanceStatus status);
     List<ProcessInstance> findByStatus(InstanceStatus status);
     List<ProcessInstance> findByClientId(String clientId);
+    long countByBusinessPolicyIdAndStatus(String businessPolicyId, InstanceStatus status);
+    long countByStatus(InstanceStatus status);
 }
 
 

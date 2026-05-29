@@ -5,6 +5,7 @@ import com.ibpms.domain.ActivityTask;
 import com.ibpms.domain.BusinessPolicy;
 import com.ibpms.domain.ProcessInstance;
 import com.ibpms.domain.enums.TaskStatus;
+import com.ibpms.dto.response.TaskNotificationDto;
 import com.ibpms.dto.response.TaskResponse;
 import com.ibpms.exception.InvalidTaskStateException;
 import com.ibpms.exception.TaskNotFoundException;
@@ -12,11 +13,13 @@ import com.ibpms.repository.ActivityTaskRepository;
 import com.ibpms.repository.BusinessPolicyRepository;
 import com.ibpms.repository.ProcessInstanceRepository;
 import com.ibpms.service.api.TaskService;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,17 +29,21 @@ import java.util.stream.Collectors;
 @Service
 public class TaskServiceImpl implements TaskService {
 
-    private record NodeInfo(Map<String, Object> formSchema, String label) {}
+    private record NodeInfo(Map<String, Object> formSchema, String label, String policyName) {}
+
     private final ActivityTaskRepository taskRepository;
     private final ProcessInstanceRepository processInstanceRepository;
     private final BusinessPolicyRepository policyRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     public TaskServiceImpl(ActivityTaskRepository taskRepository,
                            ProcessInstanceRepository processInstanceRepository,
-                           BusinessPolicyRepository policyRepository) {
+                           BusinessPolicyRepository policyRepository,
+                           SimpMessagingTemplate messagingTemplate) {
         this.taskRepository = taskRepository;
         this.processInstanceRepository = processInstanceRepository;
         this.policyRepository = policyRepository;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @Override
@@ -76,8 +83,20 @@ public class TaskServiceImpl implements TaskService {
         task.setStartedAt(LocalDateTime.now());
         ActivityTask saved = taskRepository.save(task);
 
-        Map<String, NodeInfo> nodeInfo = resolveFormSchemas(List.of(saved));
-        return toResponse(saved, nodeInfo.get(saved.getNodeId()));
+        Map<String, NodeInfo> nodeInfoMap = resolveFormSchemas(List.of(saved));
+        NodeInfo info = nodeInfoMap.get(saved.getNodeId());
+
+        // WebSocket: notify the specific user who claimed the task (DT-10 / RF-02)
+        TaskNotificationDto claimNotification = new TaskNotificationDto(
+                saved.getId(),
+                saved.getNodeId(),
+                info != null ? info.label() : saved.getNodeId(),
+                saved.getProcessInstanceId(),
+                info != null ? info.policyName() : ""
+        );
+        messagingTemplate.convertAndSend("/queue/user/" + userId, claimNotification);
+
+        return toResponse(saved, info);
     }
 
     /**
@@ -102,16 +121,17 @@ public class TaskServiceImpl implements TaskService {
                 .findAllById(policyIds).stream()
                 .collect(Collectors.toMap(BusinessPolicy::getId, Function.identity()));
 
-        return policiesById.values().stream()
-                .flatMap(p -> p.getNodes() != null
-                        ? p.getNodes().stream() : java.util.stream.Stream.empty())
-                .collect(Collectors.toMap(
-                        ActivityNode::getId,
-                        n -> new NodeInfo(n.getFormSchema(), n.getLabel()),
-                        (a, b) -> a
-                ));
+        // nodeId → NodeInfo (formSchema + label + policyName)
+        Map<String, NodeInfo> result = new HashMap<>();
+        for (BusinessPolicy policy : policiesById.values()) {
+            if (policy.getNodes() == null) continue;
+            for (ActivityNode node : policy.getNodes()) {
+                result.putIfAbsent(node.getId(),
+                        new NodeInfo(node.getFormSchema(), node.getLabel(), policy.getName()));
+            }
+        }
+        return result;
     }
-
 
     private TaskResponse toResponse(ActivityTask task, NodeInfo info) {
         return new TaskResponse(

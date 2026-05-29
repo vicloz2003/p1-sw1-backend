@@ -8,6 +8,7 @@ import com.ibpms.domain.enums.InstanceStatus;
 import com.ibpms.domain.enums.NodeType;
 import com.ibpms.domain.enums.PolicyStatus;
 import com.ibpms.domain.enums.TaskStatus;
+import com.ibpms.dto.response.ProcessStateNotificationDto;
 import com.ibpms.engine.api.WorkflowEngine;
 import com.ibpms.engine.evaluator.NodeEvaluator;
 import com.ibpms.engine.router.FlowRouter;
@@ -18,6 +19,7 @@ import com.ibpms.exception.TaskNotFoundException;
 import com.ibpms.repository.ActivityTaskRepository;
 import com.ibpms.repository.BusinessPolicyRepository;
 import com.ibpms.repository.ProcessInstanceRepository;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -45,17 +47,20 @@ public class WorkflowEngineImpl implements WorkflowEngine {
     private final ActivityTaskRepository taskRepository;
     private final List<NodeEvaluator> evaluators;
     private final FlowRouter flowRouter;
+    private final SimpMessagingTemplate messagingTemplate;
 
     public WorkflowEngineImpl(BusinessPolicyRepository policyRepository,
                                ProcessInstanceRepository instanceRepository,
                                ActivityTaskRepository taskRepository,
                                List<NodeEvaluator> evaluators,
-                               FlowRouter flowRouter) {
+                               FlowRouter flowRouter,
+                               SimpMessagingTemplate messagingTemplate) {
         this.policyRepository = policyRepository;
         this.instanceRepository = instanceRepository;
         this.taskRepository = taskRepository;
         this.evaluators = evaluators;
         this.flowRouter = flowRouter;
+        this.messagingTemplate = messagingTemplate;
     }
 
     // -------------------------------------------------------------------------
@@ -136,6 +141,20 @@ public class WorkflowEngineImpl implements WorkflowEngine {
             instance.setCurrentNodeId(flow.getTargetNodeId());
             advanceTo(nextNode, policy, instance);
         }
+
+        // WebSocket: push the updated process state to all subscribers (DT-10 / RF-03)
+        String currentNodeLabel = flowRouter.findNodeById(instance.getCurrentNodeId(), policy)
+                .map(ActivityNode::getLabel)
+                .orElse(instance.getCurrentNodeId());
+
+        ProcessStateNotificationDto stateNotification = new ProcessStateNotificationDto(
+                instance.getId(),
+                instance.getCurrentNodeId(),
+                currentNodeLabel,
+                policy.getName(),
+                instance.getStatus()
+        );
+        messagingTemplate.convertAndSend("/topic/process/" + instance.getId(), stateNotification);
     }
 
     // -------------------------------------------------------------------------
