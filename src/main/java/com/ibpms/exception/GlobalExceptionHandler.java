@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpStatusCode;
 
 @ControllerAdvice
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -152,6 +153,18 @@ public class GlobalExceptionHandler {
         pd.setType(URI("https://example.com/problems/user-not-found"));
         pd.setTitle("User not found");
         pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(DiagramInvalidException.class)
+    public ProblemDetail handleDiagramInvalid(DiagramInvalidException ex, HttpServletRequest request) {
+        // 422 Unprocessable Entity — ProblemDetail.forStatus accepts HttpStatusCode
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatusCode.valueOf(422));
+        pd.setDetail(ex.getMessage());
+        pd.setType(URI("https://example.com/problems/diagram-invalid"));
+        pd.setTitle("Diagram validation failed");
+        pd.setInstance(URI(request.getRequestURI()));
+        pd.setProperty("violations", ex.getViolations());
         return pd;
     }
 

@@ -6,6 +6,7 @@ import com.ibpms.domain.enums.PolicyStatus;
 import com.ibpms.dto.request.CreatePolicyRequest;
 import com.ibpms.dto.request.UpdatePolicyRequest;
 import com.ibpms.dto.response.PolicyResponse;
+import com.ibpms.engine.validator.DiagramValidator;
 import com.ibpms.exception.PolicyInUseException;
 import com.ibpms.exception.PolicyNotFoundException;
 import com.ibpms.repository.BusinessPolicyRepository;
@@ -21,11 +22,14 @@ public class PolicyServiceImpl implements PolicyService {
 
     private final BusinessPolicyRepository policyRepository;
     private final ProcessInstanceRepository processInstanceRepository;
+    private final DiagramValidator diagramValidator;
 
     public PolicyServiceImpl(BusinessPolicyRepository policyRepository,
-                             ProcessInstanceRepository processInstanceRepository) {
+                             ProcessInstanceRepository processInstanceRepository,
+                             DiagramValidator diagramValidator) {
         this.policyRepository = policyRepository;
         this.processInstanceRepository = processInstanceRepository;
+        this.diagramValidator = diagramValidator;
     }
 
     @Override
@@ -88,6 +92,8 @@ public class PolicyServiceImpl implements PolicyService {
     public PolicyResponse publish(String id) {
         BusinessPolicy policy = policyRepository.findById(id)
                 .orElseThrow(() -> new PolicyNotFoundException("Policy not found: " + id));
+        // Validate diagram integrity before publishing (DT-09)
+        diagramValidator.validate(policy);
         policy.setStatus(PolicyStatus.ACTIVE);
         policy.setUpdatedAt(LocalDateTime.now());
         return toResponse(policyRepository.save(policy));
