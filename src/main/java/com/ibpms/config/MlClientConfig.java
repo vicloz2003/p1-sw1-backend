@@ -30,8 +30,18 @@ public class MlClientConfig {
 
     @Bean
     public RestClient mlRestClient(@Value("${ibpms.ml.url}") String mlBaseUrl) {
+        return pythonClient(mlBaseUrl);
+    }
+
+    /** Client to ibpms_ia (:8000, Gemini) — dynamic report interpretation (RF-4). */
+    @Bean
+    public RestClient iaRestClient(@Value("${ibpms.ia.url}") String iaBaseUrl) {
+        return pythonClient(iaBaseUrl);
+    }
+
+    private static RestClient pythonClient(String baseUrl) {
         return RestClient.builder()
-                .baseUrl(mlBaseUrl)
+                .baseUrl(baseUrl)
                 .requestFactory(new SimpleClientHttpRequestFactory())
                 .messageConverters(converters -> {
                     converters.add(new JacksonJsonHttpMessageConverter());
