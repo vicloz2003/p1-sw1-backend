@@ -16,6 +16,7 @@ import com.ibpms.engine.router.FlowRouter;
 import com.ibpms.exception.InvalidTaskStateException;
 import com.ibpms.exception.PolicyNotFoundException;
 import com.ibpms.exception.PolicyNotActiveException;
+import com.ibpms.exception.TaskAccessDeniedException;
 import com.ibpms.exception.TaskNotFoundException;
 import com.ibpms.repository.ActivityTaskRepository;
 import com.ibpms.repository.BusinessPolicyRepository;
@@ -112,6 +113,17 @@ public class WorkflowEngineImpl implements WorkflowEngine {
             throw new InvalidTaskStateException("Task is already completed: " + taskId);
         }
 
+        // Authorization: only the user who claimed the task may complete it.
+        // A task must be claimed (IN_PROGRESS, assignedUserId set) before completion.
+        if (task.getAssignedUserId() == null) {
+            throw new InvalidTaskStateException(
+                    "Task must be claimed before it can be completed: " + taskId);
+        }
+        if (!task.getAssignedUserId().equals(userId)) {
+            throw new TaskAccessDeniedException(
+                    "You can only complete tasks assigned to you: " + taskId);
+        }
+
         ProcessInstance instance = instanceRepository.findById(task.getProcessInstanceId())
                 .orElseThrow(() -> new IllegalStateException(
                         "ProcessInstance not found: " + task.getProcessInstanceId()));
@@ -167,19 +179,22 @@ public class WorkflowEngineImpl implements WorkflowEngine {
 
         // FCM push to the CLIENT who initiated the process (RF-30)
         if (instance.getClientId() != null) {
+            String safeNodeLabel = currentNodeLabel != null ? currentNodeLabel : "";
             userRepository.findById(instance.getClientId()).ifPresent(client -> {
                 String fcmToken = client.getFcmToken();
                 if (fcmToken != null && !fcmToken.isBlank()) {
+                    // Build payload defensively — Map.of() throws NPE on null values.
+                    Map<String, String> data = new HashMap<>();
+                    data.put("processInstanceId", instance.getId());
+                    data.put("currentNodeLabel", safeNodeLabel);
+                    data.put("status", instance.getStatus().name());
+
                     pushNotificationService.sendToToken(
                             fcmToken,
                             "Estado de tu trámite actualizado",
-                            "Tu trámite ahora está en: " + currentNodeLabel
+                            "Tu trámite ahora está en: " + safeNodeLabel
                                     + " (" + instance.getStatus().name() + ").",
-                            java.util.Map.of(
-                                    "processInstanceId", instance.getId(),
-                                    "currentNodeLabel", currentNodeLabel,
-                                    "status", instance.getStatus().name()
-                            )
+                            data
                     );
                 }
             });

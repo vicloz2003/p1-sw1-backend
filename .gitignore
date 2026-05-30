@@ -34,3 +34,6 @@ DOMAIN.md
 
 ### VS Code ###
 .vscode/
+
+### Local run logs ###
+*.log

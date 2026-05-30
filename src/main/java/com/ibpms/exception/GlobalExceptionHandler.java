@@ -176,6 +176,27 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(TaskAccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ProblemDetail handleTaskAccessDenied(TaskAccessDeniedException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/task-access-denied"));
+        pd.setTitle("Task access denied");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(MissingMandatoryDocumentsException.class)
+    public ProblemDetail handleMissingMandatoryDocuments(MissingMandatoryDocumentsException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatusCode.valueOf(422));
+        pd.setDetail(ex.getMessage());
+        pd.setType(URI("https://example.com/problems/missing-mandatory-documents"));
+        pd.setTitle("Missing mandatory documents");
+        pd.setInstance(URI(request.getRequestURI()));
+        pd.setProperty("missingDocuments", ex.getMissingDocumentNames());
+        return pd;
+    }
+
     @ExceptionHandler(DiagramInvalidException.class)
     public ProblemDetail handleDiagramInvalid(DiagramInvalidException ex, HttpServletRequest request) {
         // 422 Unprocessable Entity — ProblemDetail.forStatus accepts HttpStatusCode
@@ -188,12 +209,32 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(DepartmentAlreadyExistsException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ProblemDetail handleDepartmentAlreadyExists(DepartmentAlreadyExistsException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/department-already-exists"));
+        pd.setTitle("Department already exists");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
     @ExceptionHandler(FormTemplateNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ProblemDetail handleFormTemplateNotFound(FormTemplateNotFoundException ex, HttpServletRequest request) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
         pd.setType(URI("https://example.com/problems/form-template-not-found"));
         pd.setTitle("Form template not found");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
+    @ExceptionHandler(AgentUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ProblemDetail handleAgentUnavailable(AgentUnavailableException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+        pd.setType(URI("https://example.com/problems/agent-unavailable"));
+        pd.setTitle("Agent service unavailable");
         pd.setInstance(URI(request.getRequestURI()));
         return pd;
     }

@@ -1,6 +1,7 @@
 package com.ibpms.controller;
 
 import com.ibpms.dto.request.InitiateDocumentUploadRequest;
+import com.ibpms.dto.request.InitiatePreProcessUploadRequest;
 import com.ibpms.dto.response.AuditLogResponse;
 import com.ibpms.dto.response.DocumentDownloadResponse;
 import com.ibpms.dto.response.DocumentResponse;
@@ -34,6 +35,23 @@ public class DocumentController {
     }
 
     /**
+     * RF-01: Pre-process upload — CLIENT uploads a mandatory PROCESS_START document
+     * before the process instance is created. Returns a presigned PUT URL.
+     * The document is linked to the instance when {@code POST /processes} is called.
+     */
+    @PostMapping("/pre-process")
+    @PreAuthorize("hasAnyAuthority('CLIENT', 'EMPLOYEE', 'ADMIN_DESIGNER')")
+    public ResponseEntity<DocumentUploadInitiateResponse> initiatePreProcessUpload(
+            @Valid @RequestBody InitiatePreProcessUploadRequest request,
+            Authentication authentication) {
+        String userId = (String) authentication.getPrincipal();
+        String userRole = authentication.getAuthorities().iterator().next().getAuthority();
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(documentService.initiatePreProcessUpload(request, userId, userRole));
+    }
+
+    /**
      * RF-02 / RF-03: Request a presigned S3 PUT URL and create a PENDING_UPLOAD record.
      * CLIENT calls this at process start; EMPLOYEE calls this when completing an ACTION node.
      */
@@ -59,7 +77,8 @@ public class DocumentController {
             @PathVariable String id,
             Authentication authentication) {
         String userId = (String) authentication.getPrincipal();
-        return ResponseEntity.ok(documentService.confirmUpload(id, userId));
+        String userRole = authentication.getAuthorities().iterator().next().getAuthority();
+        return ResponseEntity.ok(documentService.confirmUpload(id, userId, userRole));
     }
 
     /**
@@ -115,5 +134,27 @@ public class DocumentController {
     @PreAuthorize("hasAuthority('ADMIN_DESIGNER')")
     public ResponseEntity<List<AuditLogResponse>> getAuditLog(@PathVariable String id) {
         return ResponseEntity.ok(documentService.getAuditLog(id));
+    }
+
+    /**
+     * RF-1.4: All documents of a client across all their trámites (per-client repository).
+     * Used by the jefe de negocio. ADMIN_DESIGNER only.
+     */
+    @GetMapping("/by-client/{clientId}")
+    @PreAuthorize("hasAuthority('ADMIN_DESIGNER')")
+    public ResponseEntity<List<DocumentResponse>> getByClient(@PathVariable String clientId) {
+        return ResponseEntity.ok(documentService.listByClient(clientId));
+    }
+
+    /**
+     * RF-1.4: A client's documents within a specific policy (per policy AND per client).
+     * ADMIN_DESIGNER only.
+     */
+    @GetMapping("/by-policy/{policyId}/client/{clientId}")
+    @PreAuthorize("hasAuthority('ADMIN_DESIGNER')")
+    public ResponseEntity<List<DocumentResponse>> getByPolicyAndClient(
+            @PathVariable String policyId,
+            @PathVariable String clientId) {
+        return ResponseEntity.ok(documentService.listByPolicyAndClient(policyId, clientId));
     }
 }

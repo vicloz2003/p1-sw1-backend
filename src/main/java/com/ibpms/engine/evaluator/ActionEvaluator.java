@@ -87,14 +87,19 @@ public class ActionEvaluator implements NodeEvaluator {
                     .toList();
 
             if (!fcmTokens.isEmpty()) {
+                // Build the data payload defensively — Map.of() throws NPE on null
+                // values, and policy name / node label may be null.
+                Map<String, String> data = new HashMap<>();
+                data.put("taskId", saved.getId());
+                data.put("policyName", policy.getName() != null ? policy.getName() : "");
+                data.put("nodeLabel", node.getLabel() != null ? node.getLabel() : "");
+
                 pushNotificationService.sendToMultipleTokens(
                         fcmTokens,
                         "Nueva tarea asignada",
                         "Tienes una tarea pendiente: " + node.getLabel()
                                 + " en la politica '" + policy.getName() + "'.",
-                        Map.of("taskId", saved.getId(),
-                               "policyName", policy.getName(),
-                               "nodeLabel", node.getLabel() != null ? node.getLabel() : "")
+                        data
                 );
             }
         }

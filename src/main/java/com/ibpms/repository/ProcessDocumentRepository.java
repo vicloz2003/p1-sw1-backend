@@ -17,4 +17,15 @@ public interface ProcessDocumentRepository extends MongoRepository<ProcessDocume
 
     /** Documents linked to a specific task (RF-03). */
     List<ProcessDocument> findByTaskId(String taskId);
+
+    /** Find pre-process documents by their IDs and status (used during startProcess validation). */
+    List<ProcessDocument> findByIdInAndStatus(List<String> ids, DocumentStatus status);
+
+    /** All non-deleted documents of a client across all their trámites (RF-1.4). */
+    List<ProcessDocument> findByClientIdAndStatusNot(String clientId, DocumentStatus status);
+
+    /** Non-deleted documents of a client within a specific policy (RF-1.4 — jefe query). */
+    List<ProcessDocument> findByBusinessPolicyIdAndClientIdAndStatusNot(String businessPolicyId,
+                                                                        String clientId,
+                                                                        DocumentStatus status);
 }

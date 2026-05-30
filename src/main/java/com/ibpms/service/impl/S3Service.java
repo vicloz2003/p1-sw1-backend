@@ -59,11 +59,16 @@ public class S3Service {
      * @return the computed S3 key and presigned PUT URL (valid for 15 minutes)
      */
     public Map<String, String> initiateDocumentUpload(String policyId,
+                                                       String clientId,
                                                        String processInstanceId,
                                                        String requirementId,
                                                        String fileName,
                                                        String mimeType) {
+        // Repository organized per policy AND per client (RF-1.4):
+        // /{policyId}/{clientId}/{processInstanceId}/{requirementId}/{uuid}_{filename}
+        String clientSegment = (clientId != null && !clientId.isBlank()) ? clientId : "sin_cliente";
         String key = "/" + policyId
+                + "/" + clientSegment
                 + "/" + processInstanceId
                 + "/" + requirementId
                 + "/" + UUID.randomUUID() + "_" + sanitizeFileName(fileName);

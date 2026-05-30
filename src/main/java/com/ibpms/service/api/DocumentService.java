@@ -1,6 +1,7 @@
 package com.ibpms.service.api;
 
 import com.ibpms.dto.request.InitiateDocumentUploadRequest;
+import com.ibpms.dto.request.InitiatePreProcessUploadRequest;
 import com.ibpms.dto.response.AuditLogResponse;
 import com.ibpms.dto.response.DocumentDownloadResponse;
 import com.ibpms.dto.response.DocumentResponse;
@@ -23,9 +24,20 @@ public interface DocumentService {
                                                    String userRole);
 
     /**
-     * Verifies the file exists in S3 (HeadObject) and marks the document CONFIRMED (RF-10).
+     * Pre-process variant: generates a presigned PUT URL for a mandatory PROCESS_START
+     * document before the process instance exists (RF-01).
+     * The resulting record has {@code processInstanceId = null} until
+     * {@code startProcess()} links it.
      */
-    DocumentResponse confirmUpload(String documentId, String userId);
+    DocumentUploadInitiateResponse initiatePreProcessUpload(InitiatePreProcessUploadRequest request,
+                                                             String userId,
+                                                             String userRole);
+
+    /**
+     * Verifies the file exists in S3 (HeadObject) and marks the document CONFIRMED (RF-10).
+     * Requires write permission on the document.
+     */
+    DocumentResponse confirmUpload(String documentId, String userId, String userRole);
 
     /**
      * Returns a presigned GET URL valid for 15 minutes and writes an audit log (RF-06).
@@ -38,6 +50,12 @@ public interface DocumentService {
 
     /** Lists all non-deleted documents for a process instance (RF-04). */
     List<DocumentResponse> listByInstance(String processInstanceId);
+
+    /** Lists all non-deleted documents of a client across all their trámites (RF-1.4). */
+    List<DocumentResponse> listByClient(String clientId);
+
+    /** Lists a client's non-deleted documents within a specific policy (RF-1.4). */
+    List<DocumentResponse> listByPolicyAndClient(String policyId, String clientId);
 
     /**
      * Creates a new version of the document.

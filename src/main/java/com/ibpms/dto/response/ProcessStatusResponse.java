@@ -10,6 +10,7 @@ import java.util.List;
  */
 public record ProcessStatusResponse(
         String processInstanceId,
+        String businessPolicyId,
         String currentNodeId,
         String currentNodeLabel,
         String currentDepartmentId,

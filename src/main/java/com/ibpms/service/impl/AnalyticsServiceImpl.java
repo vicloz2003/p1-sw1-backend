@@ -78,21 +78,31 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
     @Override
     public List<EmployeePerformanceResponse> getEmployeePerformance() {
-        List<ActivityTask> completed = taskRepository.findByStatus(TaskStatus.COMPLETED)
-                .stream()
+        return computeEmployeePerformance(taskRepository.findByStatus(TaskStatus.COMPLETED));
+    }
+
+    /**
+     * Computes per-employee performance over a given set of completed tasks.
+     *
+     * <p>Work time is measured as {@code startedAt → completedAt} (actual time the
+     * employee spent on the task), NOT {@code assignedAt → completedAt}, so that an
+     * employee is not penalized for the period a task sat unclaimed in the queue.
+     */
+    private List<EmployeePerformanceResponse> computeEmployeePerformance(List<ActivityTask> source) {
+        List<ActivityTask> completed = source.stream()
                 .filter(t -> t.getAssignedUserId() != null
-                        && t.getAssignedAt() != null
+                        && t.getStartedAt() != null
                         && t.getCompletedAt() != null)
                 .toList();
 
         if (completed.isEmpty()) return List.of();
 
-        // Global average per nodeId
+        // Global average per nodeId (work time)
         Map<String, Double> globalAvgByNode = completed.stream()
                 .collect(Collectors.groupingBy(
                         ActivityTask::getNodeId,
                         Collectors.averagingDouble(t ->
-                                Duration.between(t.getAssignedAt(), t.getCompletedAt()).toSeconds())
+                                Duration.between(t.getStartedAt(), t.getCompletedAt()).toSeconds())
                 ));
 
         // Username lookup map
@@ -112,7 +122,7 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                     List<ActivityTask> userTasks = entry.getValue();
 
                     double userAvg = userTasks.stream()
-                            .mapToLong(t -> Duration.between(t.getAssignedAt(), t.getCompletedAt()).toSeconds())
+                            .mapToLong(t -> Duration.between(t.getStartedAt(), t.getCompletedAt()).toSeconds())
                             .average()
                             .orElse(0);
 
@@ -271,7 +281,17 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .limit(5)
                 .toList();
 
-        List<EmployeePerformanceResponse> poorPerformers = getEmployeePerformance().stream()
+        // Scope poor performers to THIS policy only (consistent with the rest of the
+        // dashboard). Previously this used the global ranking across all policies.
+        Set<String> policyInstanceIds = instances.stream()
+                .map(ProcessInstance::getId)
+                .collect(Collectors.toSet());
+        List<ActivityTask> policyCompletedTasks = taskRepository.findByStatus(TaskStatus.COMPLETED)
+                .stream()
+                .filter(t -> policyInstanceIds.contains(t.getProcessInstanceId()))
+                .toList();
+
+        List<EmployeePerformanceResponse> poorPerformers = computeEmployeePerformance(policyCompletedTasks).stream()
                 .filter(e -> "POOR".equals(e.performanceLevel()))
                 .limit(5)
                 .toList();

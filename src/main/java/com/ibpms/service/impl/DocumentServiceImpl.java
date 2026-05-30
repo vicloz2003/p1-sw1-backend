@@ -8,6 +8,7 @@ import com.ibpms.domain.ProcessInstance;
 import com.ibpms.domain.enums.DocumentAction;
 import com.ibpms.domain.enums.DocumentStatus;
 import com.ibpms.dto.request.InitiateDocumentUploadRequest;
+import com.ibpms.dto.request.InitiatePreProcessUploadRequest;
 import com.ibpms.dto.response.AuditLogResponse;
 import com.ibpms.dto.response.DocumentDownloadResponse;
 import com.ibpms.dto.response.DocumentResponse;
@@ -66,6 +67,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         Map<String, String> s3Result = s3Service.initiateDocumentUpload(
                 instance.getBusinessPolicyId(),
+                instance.getClientId(),
                 instance.getId(),
                 requirementId,
                 request.fileName(),
@@ -85,6 +87,7 @@ public class DocumentServiceImpl implements DocumentService {
         ProcessDocument doc = new ProcessDocument();
         doc.setProcessInstanceId(instance.getId());
         doc.setBusinessPolicyId(instance.getBusinessPolicyId());
+        doc.setClientId(instance.getClientId());
         doc.setDocumentRequirementId(request.documentRequirementId());
         doc.setFileName(request.fileName());
         doc.setMimeType(request.mimeType());
@@ -107,12 +110,72 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // RF-01: Pre-process upload (before instance exists)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    public DocumentUploadInitiateResponse initiatePreProcessUpload(InitiatePreProcessUploadRequest request,
+                                                                    String userId,
+                                                                    String userRole) {
+        // The CLIENT uploading their own docs via the agent → clientId = their userId.
+        // An EMPLOYEE on behalf of a client provides clientId explicitly in the request.
+        String clientId = (request.clientId() != null && !request.clientId().isBlank())
+                ? request.clientId()
+                : userId;
+
+        Map<String, String> s3Result = s3Service.initiateDocumentUpload(
+                request.policyId(),
+                clientId,
+                "pre_process",
+                request.documentRequirementId(),
+                request.fileName(),
+                request.mimeType()
+        );
+
+        String s3Key = s3Result.get("key");
+        String presignedUrl = s3Result.get("presignedUrl");
+
+        DocumentPermissions permissions = new DocumentPermissions(
+                List.of(userId, "ADMIN_DESIGNER"),
+                List.of(userId, "ADMIN_DESIGNER"),
+                List.of(userId, "ADMIN_DESIGNER")
+        );
+
+        ProcessDocument doc = new ProcessDocument();
+        doc.setProcessInstanceId(null);
+        doc.setBusinessPolicyId(request.policyId());
+        doc.setClientId(clientId);
+        doc.setDocumentRequirementId(request.documentRequirementId());
+        doc.setFileName(request.fileName());
+        doc.setMimeType(request.mimeType());
+        doc.setS3Key(s3Key);
+        doc.setUploadedBy(userId);
+        doc.setUploadedByRole(userRole);
+        doc.setStatus(DocumentStatus.PENDING_UPLOAD);
+        doc.setVersions(new ArrayList<>());
+        doc.setPermissions(permissions);
+        doc.setUploadedAt(LocalDateTime.now());
+
+        ProcessDocument saved = documentRepository.save(doc);
+
+        saveAuditLog(saved.getId(), null, userId, userRole,
+                DocumentAction.UPLOAD, null, "Pre-process PENDING_UPLOAD initiated");
+
+        return new DocumentUploadInitiateResponse(saved.getId(), s3Key, presignedUrl);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // RF-10: Confirm upload
     // ─────────────────────────────────────────────────────────────────────────
 
     @Override
-    public DocumentResponse confirmUpload(String documentId, String userId) {
+    public DocumentResponse confirmUpload(String documentId, String userId, String userRole) {
         ProcessDocument doc = findDoc(documentId);
+
+        if (!canWrite(doc, userId, userRole)) {
+            throw new DocumentAccessDeniedException(
+                    "You do not have write access to document: " + documentId);
+        }
 
         if (doc.getStatus() == DocumentStatus.CONFIRMED) {
             return toResponse(doc); // idempotent
@@ -176,6 +239,24 @@ public class DocumentServiceImpl implements DocumentService {
                 .toList();
     }
 
+    @Override
+    public List<DocumentResponse> listByClient(String clientId) {
+        return documentRepository
+                .findByClientIdAndStatusNot(clientId, DocumentStatus.DELETED)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Override
+    public List<DocumentResponse> listByPolicyAndClient(String policyId, String clientId) {
+        return documentRepository
+                .findByBusinessPolicyIdAndClientIdAndStatusNot(policyId, clientId, DocumentStatus.DELETED)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // RF-07: New version
     // ─────────────────────────────────────────────────────────────────────────
@@ -209,6 +290,7 @@ public class DocumentServiceImpl implements DocumentService {
         // Generate new S3 key and presigned URL
         Map<String, String> s3Result = s3Service.initiateDocumentUpload(
                 doc.getBusinessPolicyId(),
+                doc.getClientId(),
                 doc.getProcessInstanceId(),
                 doc.getDocumentRequirementId() != null ? doc.getDocumentRequirementId() : "adhoc",
                 fileName != null ? fileName : doc.getFileName(),

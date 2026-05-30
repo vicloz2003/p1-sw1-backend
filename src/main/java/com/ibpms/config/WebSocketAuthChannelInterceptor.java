@@ -1,6 +1,8 @@
 package com.ibpms.config;
 
+import com.ibpms.domain.ProcessInstance;
 import com.ibpms.domain.enums.SystemRole;
+import com.ibpms.repository.ProcessInstanceRepository;
 import com.ibpms.security.JwtService;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -29,11 +31,16 @@ import java.security.Principal;
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private static final String DEPT_TOPIC_PREFIX = "/topic/department/";
+    private static final String USER_QUEUE_PREFIX = "/queue/user/";
+    private static final String PROCESS_TOPIC_PREFIX = "/topic/process/";
 
     private final JwtService jwtService;
+    private final ProcessInstanceRepository processInstanceRepository;
 
-    public WebSocketAuthChannelInterceptor(JwtService jwtService) {
+    public WebSocketAuthChannelInterceptor(JwtService jwtService,
+                                           ProcessInstanceRepository processInstanceRepository) {
         this.jwtService = jwtService;
+        this.processInstanceRepository = processInstanceRepository;
     }
 
     @Override
@@ -83,8 +90,16 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private void handleSubscribe(StompHeaderAccessor accessor) {
         String destination = accessor.getDestination();
-        if (destination == null || !destination.startsWith(DEPT_TOPIC_PREFIX)) {
-            return; // Not a department topic — no restriction
+        if (destination == null) {
+            return;
+        }
+
+        // Only the three protected destination families require authorization.
+        boolean isProtected = destination.startsWith(DEPT_TOPIC_PREFIX)
+                || destination.startsWith(USER_QUEUE_PREFIX)
+                || destination.startsWith(PROCESS_TOPIC_PREFIX);
+        if (!isProtected) {
+            return;
         }
 
         Principal principal = accessor.getUser();
@@ -93,22 +108,67 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
                     "Not authenticated — cannot subscribe to " + destination);
         }
 
-        // ADMIN_DESIGNER may monitor any department
+        if (destination.startsWith(DEPT_TOPIC_PREFIX)) {
+            authorizeDepartmentTopic(destination, jwtPrincipal);
+        } else if (destination.startsWith(USER_QUEUE_PREFIX)) {
+            authorizeUserQueue(destination, jwtPrincipal);
+        } else {
+            authorizeProcessTopic(destination, jwtPrincipal);
+        }
+    }
+
+    /** {@code /topic/department/{id}}: caller must belong to {id}; ADMIN bypasses. */
+    private void authorizeDepartmentTopic(String destination, JwtPrincipal jwtPrincipal) {
         if (SystemRole.ADMIN_DESIGNER.name().equals(jwtPrincipal.role())) {
             return;
         }
-
-        String topicDeptId = destination.substring(DEPT_TOPIC_PREFIX.length());
-        // Fix 2: prevent path-traversal attacks in the department ID segment
-        if (topicDeptId.contains("/") || topicDeptId.contains("..")) {
-            throw new AccessDeniedException("Invalid department topic");
-        }
+        String topicDeptId = segmentAfter(destination, DEPT_TOPIC_PREFIX);
         String principalDepartmentId = jwtPrincipal.departmentId();
-        if (principalDepartmentId == null ||
-                !topicDeptId.equals(principalDepartmentId)) {
+        if (principalDepartmentId == null || !topicDeptId.equals(principalDepartmentId)) {
             throw new AccessDeniedException(
                     "Forbidden: not a member of department " + topicDeptId);
         }
+    }
+
+    /** {@code /queue/user/{userId}}: caller may only subscribe to their own queue; ADMIN bypasses. */
+    private void authorizeUserQueue(String destination, JwtPrincipal jwtPrincipal) {
+        if (SystemRole.ADMIN_DESIGNER.name().equals(jwtPrincipal.role())) {
+            return;
+        }
+        String topicUserId = segmentAfter(destination, USER_QUEUE_PREFIX);
+        if (!topicUserId.equals(jwtPrincipal.userId())) {
+            throw new AccessDeniedException("Forbidden: cannot subscribe to another user's queue");
+        }
+    }
+
+    /**
+     * {@code /topic/process/{id}}: ADMIN and EMPLOYEE have operational access to any
+     * process; a CLIENT may only watch processes they initiated or are the client of.
+     */
+    private void authorizeProcessTopic(String destination, JwtPrincipal jwtPrincipal) {
+        if (SystemRole.ADMIN_DESIGNER.name().equals(jwtPrincipal.role())
+                || SystemRole.EMPLOYEE.name().equals(jwtPrincipal.role())) {
+            return;
+        }
+        String instanceId = segmentAfter(destination, PROCESS_TOPIC_PREFIX);
+        ProcessInstance instance = processInstanceRepository.findById(instanceId)
+                .orElseThrow(() -> new AccessDeniedException(
+                        "Forbidden: process not found or not accessible"));
+        String userId = jwtPrincipal.userId();
+        boolean owns = userId != null
+                && (userId.equals(instance.getClientId()) || userId.equals(instance.getInitiatedBy()));
+        if (!owns) {
+            throw new AccessDeniedException("Forbidden: not your process");
+        }
+    }
+
+    /** Extracts the path segment after {@code prefix}, rejecting path-traversal attempts. */
+    private String segmentAfter(String destination, String prefix) {
+        String segment = destination.substring(prefix.length());
+        if (segment.isEmpty() || segment.contains("/") || segment.contains("..")) {
+            throw new AccessDeniedException("Invalid subscription destination");
+        }
+        return segment;
     }
 
     // -------------------------------------------------------------------------

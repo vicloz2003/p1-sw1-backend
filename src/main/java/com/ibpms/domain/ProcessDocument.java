@@ -33,6 +33,14 @@ public class ProcessDocument {
     private String businessPolicyId;
 
     /**
+     * Owner client of the document (RF-1.4). Together with {@code businessPolicyId}
+     * this makes the repository organizable "per policy AND per client" as required.
+     * Denormalized from the process instance for direct querying. May be null for
+     * documents not associated to a client.
+     */
+    private String clientId;
+
+    /**
      * The {@link DocumentRequirement#getId()} this file satisfies.
      * {@code null} when it is an ad-hoc document attached at an ACTION node.
      */

@@ -31,6 +31,12 @@ public class ProcessController {
         this.documentService = documentService;
     }
 
+    @GetMapping
+    @PreAuthorize("hasAuthority('ADMIN_DESIGNER')")
+    public ResponseEntity<List<ProcessStatusResponse>> getAll() {
+        return ResponseEntity.ok(processService.getAll());
+    }
+
     @PostMapping
     @PreAuthorize("hasAnyAuthority('EMPLOYEE', 'CLIENT')")
     public ResponseEntity<ProcessStatusResponse> start(@Valid @RequestBody StartProcessRequest request,

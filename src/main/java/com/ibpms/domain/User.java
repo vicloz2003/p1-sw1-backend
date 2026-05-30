@@ -24,6 +24,8 @@ import lombok.AllArgsConstructor;
 public class User implements UserDetails {
     @Id
     private String id;
+
+    @Indexed(unique = true)
     private String username;
     /**
      * Requires `spring.data.mongodb.auto-index-creation=true` for Spring Data

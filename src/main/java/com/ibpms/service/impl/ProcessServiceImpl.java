@@ -5,23 +5,28 @@ import com.ibpms.domain.ActivityPartition;
 import com.ibpms.domain.ActivityTask;
 import com.ibpms.domain.BusinessPolicy;
 import com.ibpms.domain.Department;
+import com.ibpms.domain.DocumentRequirement;
+import com.ibpms.domain.ProcessDocument;
 import com.ibpms.domain.ProcessInstance;
+import com.ibpms.domain.enums.DocumentStatus;
 import com.ibpms.domain.enums.NodeType;
 import com.ibpms.domain.enums.TaskStatus;
 import com.ibpms.dto.request.StartProcessRequest;
 import com.ibpms.dto.response.NodeProgressItem;
 import com.ibpms.dto.response.ProcessStatusResponse;
 import com.ibpms.engine.api.WorkflowEngine;
+import com.ibpms.exception.MissingMandatoryDocumentsException;
+import com.ibpms.exception.PolicyNotFoundException;
 import com.ibpms.exception.ProcessInstanceNotFoundException;
 import com.ibpms.repository.ActivityTaskRepository;
 import com.ibpms.repository.BusinessPolicyRepository;
 import com.ibpms.repository.DepartmentRepository;
+import com.ibpms.repository.ProcessDocumentRepository;
 import com.ibpms.repository.ProcessInstanceRepository;
 import com.ibpms.service.api.ProcessService;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,21 +41,73 @@ public class ProcessServiceImpl implements ProcessService {
     private final BusinessPolicyRepository policyRepository;
     private final ActivityTaskRepository taskRepository;
     private final DepartmentRepository departmentRepository;
+    private final ProcessDocumentRepository documentRepository;
 
     public ProcessServiceImpl(WorkflowEngine workflowEngine,
                               ProcessInstanceRepository processInstanceRepository,
                               BusinessPolicyRepository policyRepository,
                               ActivityTaskRepository taskRepository,
-                              DepartmentRepository departmentRepository) {
+                              DepartmentRepository departmentRepository,
+                              ProcessDocumentRepository documentRepository) {
         this.workflowEngine = workflowEngine;
         this.processInstanceRepository = processInstanceRepository;
         this.policyRepository = policyRepository;
         this.taskRepository = taskRepository;
         this.departmentRepository = departmentRepository;
+        this.documentRepository = documentRepository;
     }
 
+    /**
+     * Starts a new process instance.
+     *
+     * <p><strong>Document validation (RF-01):</strong> only enforced when the caller
+     * explicitly provides {@code confirmedDocumentIds} (i.e. a CLIENT starting from
+     * the mobile app who has pre-uploaded the required documents).  When an EMPLOYEE
+     * initiates from the web app without document IDs, validation is skipped — the
+     * employee is not responsible for uploading the client's documents.
+     */
     @Override
     public ProcessStatusResponse startProcess(StartProcessRequest request, String userId) {
+        List<String> provided = request.confirmedDocumentIds() != null
+                && !request.confirmedDocumentIds().isEmpty()
+                ? request.confirmedDocumentIds()
+                : List.of();
+
+        List<ProcessDocument> confirmedDocs = List.of();
+
+        // Only validate when the caller provided document IDs (CLIENT mobile flow)
+        if (!provided.isEmpty()) {
+            BusinessPolicy policy = policyRepository.findById(request.policyId())
+                    .orElseThrow(() -> new PolicyNotFoundException(request.policyId()));
+
+            List<DocumentRequirement> mandatoryAtStart = policy.getDocumentRequirements() == null
+                    ? List.of()
+                    : policy.getDocumentRequirements().stream()
+                            .filter(r -> r.isMandatory() && "PROCESS_START".equals(r.getUploadStage()))
+                            .toList();
+
+            if (!mandatoryAtStart.isEmpty()) {
+                confirmedDocs = documentRepository
+                        .findByIdInAndStatus(provided, DocumentStatus.CONFIRMED)
+                        .stream()
+                        .filter(d -> request.policyId().equals(d.getBusinessPolicyId()))
+                        .toList();
+
+                Set<String> confirmedReqIds = confirmedDocs.stream()
+                        .map(ProcessDocument::getDocumentRequirementId)
+                        .collect(Collectors.toSet());
+
+                List<String> missing = mandatoryAtStart.stream()
+                        .filter(r -> !confirmedReqIds.contains(r.getId()))
+                        .map(DocumentRequirement::getName)
+                        .toList();
+
+                if (!missing.isEmpty()) {
+                    throw new MissingMandatoryDocumentsException(missing);
+                }
+            }
+        }
+
         ProcessInstance instance = workflowEngine.startProcess(
                 request.policyId(),
                 userId,
@@ -58,6 +115,13 @@ public class ProcessServiceImpl implements ProcessService {
         );
         instance.setClientId(request.clientId());
         processInstanceRepository.save(instance);
+
+        // Link pre-process documents to the new instance if provided by CLIENT
+        if (!confirmedDocs.isEmpty()) {
+            confirmedDocs.forEach(d -> d.setProcessInstanceId(instance.getId()));
+            documentRepository.saveAll(confirmedDocs);
+        }
+
         return toStatusResponse(instance);
     }
 
@@ -73,6 +137,14 @@ public class ProcessServiceImpl implements ProcessService {
     public List<ProcessStatusResponse> getByClientId(String clientId) {
         return processInstanceRepository
                 .findByClientId(clientId)
+                .stream()
+                .map(this::toStatusResponse)
+                .toList();
+    }
+
+    @Override
+    public List<ProcessStatusResponse> getAll() {
+        return processInstanceRepository.findAll()
                 .stream()
                 .map(this::toStatusResponse)
                 .toList();
@@ -126,6 +198,7 @@ public class ProcessServiceImpl implements ProcessService {
 
         return new ProcessStatusResponse(
                 instance.getId(),
+                instance.getBusinessPolicyId(),
                 instance.getCurrentNodeId(),
                 currentNodeLabel,
                 currentDepartmentId,

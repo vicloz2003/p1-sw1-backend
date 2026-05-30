@@ -9,5 +9,6 @@ public interface ProcessService {
     ProcessStatusResponse startProcess(StartProcessRequest request, String userId);
     ProcessStatusResponse getStatus(String processInstanceId);
     List<ProcessStatusResponse> getByClientId(String clientId);
+    List<ProcessStatusResponse> getAll();
 }
 
