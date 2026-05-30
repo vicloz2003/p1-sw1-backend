@@ -8,13 +8,7 @@ import com.ibpms.dto.response.TranscribeResponse;
 import com.ibpms.exception.AgentUnavailableException;
 import com.ibpms.repository.BusinessPolicyRepository;
 import com.ibpms.service.api.AgentService;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.ByteArrayHttpMessageConverter;
-import org.springframework.http.converter.StringHttpMessageConverter;
-import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
-import org.springframework.http.converter.support.AllEncompassingFormHttpMessageConverter;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -33,26 +27,11 @@ public class AgentServiceImpl implements AgentService {
     private final RestClient restClient;
 
     public AgentServiceImpl(BusinessPolicyRepository policyRepository,
-                            @Value("${ibpms.ml.url}") String mlBaseUrl) {
+                            RestClient mlRestClient) {
         this.policyRepository = policyRepository;
-        // ROOT CAUSE of the agent 503: Spring Boot 4 / Framework 7's default RestClient uses
-        // the JDK HttpClient (JdkClientHttpRequestFactory), which negotiates HTTP/2. uvicorn
-        // (h11, HTTP/1.1 only) rejected the upgrade ("Invalid HTTP request received") and the
-        // request body was dropped (Content-Length: none, empty body) → ibpms_ml answered 422
-        // "Field required". SimpleClientHttpRequestFactory uses HttpURLConnection (clean
-        // HTTP/1.1 with a correct Content-Length), so the body reaches ibpms_ml intact.
-        // We also register the message converters explicitly because the static
-        // RestClient.builder() does not inherit the application's HttpMessageConverters.
-        this.restClient = RestClient.builder()
-                .baseUrl(mlBaseUrl)
-                .requestFactory(new SimpleClientHttpRequestFactory())
-                .messageConverters(converters -> {
-                    converters.add(new JacksonJsonHttpMessageConverter());
-                    converters.add(new StringHttpMessageConverter());
-                    converters.add(new ByteArrayHttpMessageConverter());
-                    converters.add(new AllEncompassingFormHttpMessageConverter());
-                })
-                .build();
+        // Shared client to ibpms_ml — see MlClientConfig for the HTTP/1.1 + converters setup
+        // that fixes the empty-body 503.
+        this.restClient = mlRestClient;
     }
 
     @Override
