@@ -1,0 +1,28 @@
+# OnlyOffice Document Server for collaborative Office editing (RF-1.10).
+#
+#   docker compose -f onlyoffice/docker-compose.yml up -d
+#
+# The editor is then served at http://localhost:8082. The shared JWT secret MUST match
+# onlyoffice.jwt-secret in the backend (application.properties / ONLYOFFICE_JWT_SECRET).
+#
+# On Docker Desktop (Windows/Mac) the container reaches this backend via
+# host.docker.internal — that is the default of onlyoffice.callback-base-url.
+services:
+  onlyoffice-documentserver:
+    image: onlyoffice/documentserver:8.1
+    container_name: ibpms-onlyoffice
+    ports:
+      - "8082:80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=ibpms-onlyoffice-secret-change-me
+      - JWT_HEADER=Authorization
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_logs:/var/log/onlyoffice
+
+volumes:
+  onlyoffice_data:
+  onlyoffice_logs:

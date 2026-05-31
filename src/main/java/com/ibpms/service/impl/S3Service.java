@@ -8,6 +8,7 @@ import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
@@ -125,6 +126,24 @@ public class S3Service {
             return false;
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /**
+     * Uploads raw bytes to S3 server-side (RF-1.10). Used by the OnlyOffice callback to
+     * persist a document edited collaboratively in the Document Server.
+     */
+    public void putObject(String s3Key, byte[] content, String contentType) {
+        try (S3Client s3Client = S3Client.builder()
+                .region(Region.of(region))
+                .build()) {
+
+            s3Client.putObject(PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(s3Key)
+                            .contentType(contentType != null ? contentType : "application/octet-stream")
+                            .build(),
+                    RequestBody.fromBytes(content));
         }
     }
 
