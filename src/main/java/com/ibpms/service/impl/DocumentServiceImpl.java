@@ -77,9 +77,10 @@ public class DocumentServiceImpl implements DocumentService {
         String s3Key = s3Result.get("key");
         String presignedUrl = s3Result.get("presignedUrl");
 
-        // Build default permissions: uploader can read/write/delete; ADMIN_DESIGNER always has access
+        // EMPLOYEE puede leer documentos del proceso (necesitan revisar docs del cliente para completar tareas).
+        // Write/delete siguen restringidos al uploader y ADMIN_DESIGNER.
         DocumentPermissions permissions = new DocumentPermissions(
-                List.of(userId, "ADMIN_DESIGNER"),
+                List.of(userId, "ADMIN_DESIGNER", "EMPLOYEE"),
                 List.of(userId, "ADMIN_DESIGNER"),
                 List.of(userId, "ADMIN_DESIGNER")
         );
@@ -135,8 +136,9 @@ public class DocumentServiceImpl implements DocumentService {
         String s3Key = s3Result.get("key");
         String presignedUrl = s3Result.get("presignedUrl");
 
+        // EMPLOYEE puede leer pre-process docs (los verifican al tramitar).
         DocumentPermissions permissions = new DocumentPermissions(
-                List.of(userId, "ADMIN_DESIGNER"),
+                List.of(userId, "ADMIN_DESIGNER", "EMPLOYEE"),
                 List.of(userId, "ADMIN_DESIGNER"),
                 List.of(userId, "ADMIN_DESIGNER")
         );
