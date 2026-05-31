@@ -142,7 +142,9 @@ public class TaskServiceImpl implements TaskService {
                 task.getAssignedDepartmentId(),
                 task.getStatus(),
                 info != null ? info.formSchema() : null,
-                task.getAssignedAt()
+                task.getAssignedAt(),
+                task.getStartedAt(),
+                info != null ? info.policyName() : null
         );
     }
 }

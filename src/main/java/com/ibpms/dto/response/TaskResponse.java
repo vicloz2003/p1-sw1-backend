@@ -13,6 +13,8 @@ public record TaskResponse(
         String assignedDepartmentId,
         TaskStatus status,
         Map<String, Object> formSchema,
-        LocalDateTime assignedAt
+        LocalDateTime assignedAt,
+        LocalDateTime claimedAt,   // cuándo el empleado reclamó la tarea (null si PENDING)
+        String policyName          // nombre de la política, para diferenciar tarjetas
 ) {}
 

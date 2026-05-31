@@ -45,6 +45,7 @@ public class PolicyController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ADMIN_DESIGNER', 'EMPLOYEE')")  // empleados leen la política para ver documentos requeridos en sus tareas
     public ResponseEntity<PolicyResponse> getById(@PathVariable String id) {
         return ResponseEntity.ok(policyService.getById(id));
     }
