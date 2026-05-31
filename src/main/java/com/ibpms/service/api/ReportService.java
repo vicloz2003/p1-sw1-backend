@@ -15,6 +15,10 @@ public interface ReportService {
     /** Execute a spec against MongoDB and build the tabular result. */
     ReportTable buildTable(ReportSpec spec);
 
-    /** Render a table to a file in the spec's format (EXCEL | WORD | PDF). */
-    byte[] render(ReportSpec spec, ReportTable table);
+    /**
+     * Render a table to a file.
+     *
+     * @param format explicit format — EXCEL | WORD | PDF. Overrides whatever ibpms_ia put in the spec.
+     */
+    byte[] render(ReportTable table, String format);
 }

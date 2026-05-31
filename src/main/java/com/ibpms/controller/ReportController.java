@@ -38,12 +38,15 @@ public class ReportController {
         ReportSpec spec = reportService.interpret(request.instruction());
         ReportTable table = reportService.buildTable(spec);
 
-        String format = spec.format() == null ? "SCREEN" : spec.format();
+        // Explicit format in the request always wins over whatever Gemini inferred.
+        String format = (request.format() != null && !request.format().isBlank())
+                ? request.format().toUpperCase()
+                : (spec.format() == null ? "SCREEN" : spec.format());
         if ("SCREEN".equals(format)) {
             return ResponseEntity.ok(new ReportScreenResponse(spec, table));
         }
 
-        byte[] content = reportService.render(spec, table);
+        byte[] content = reportService.render(table, format);
         String filename = sanitize(spec.title()) + extension(format);
         MediaType type = switch (format) {
             case "WORD" -> MediaType.parseMediaType(

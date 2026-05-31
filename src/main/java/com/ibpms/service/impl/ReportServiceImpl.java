@@ -243,11 +243,11 @@ public class ReportServiceImpl implements ReportService {
 
     // ── rendering ──────────────────────────────────────────────────────────────
     @Override
-    public byte[] render(ReportSpec spec, ReportTable table) {
-        return switch (nullToEmpty(spec.format())) {
+    public byte[] render(ReportTable table, String format) {
+        return switch (nullToEmpty(format).toUpperCase()) {
             case "WORD" -> renderWord(table);
-            case "PDF" -> renderPdf(table);
-            default -> renderExcel(table);
+            case "PDF"  -> renderPdf(table);
+            default     -> renderExcel(table);
         };
     }
 
