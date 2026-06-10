@@ -46,6 +46,24 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public List<UserResponse> search(String q) {
+        return userRepository
+                .findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(q, q)
+                .stream()
+                .map(this::toResponse)
+                .limit(10)
+                .toList();
+    }
+
+    @Override
+    public List<UserResponse> getByIds(List<String> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        return userRepository.findAllById(ids).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Override
     public UserResponse updateUser(String id, UpdateUserRequest request) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException(id));

@@ -197,6 +197,16 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(DocumentUploadValidationException.class)
+    public ProblemDetail handleDocumentUploadValidation(DocumentUploadValidationException ex, HttpServletRequest request) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatusCode.valueOf(422));
+        pd.setDetail(ex.getMessage());
+        pd.setType(URI("https://example.com/problems/document-upload-invalid"));
+        pd.setTitle("Document upload validation failed");
+        pd.setInstance(URI(request.getRequestURI()));
+        return pd;
+    }
+
     @ExceptionHandler(DiagramInvalidException.class)
     public ProblemDetail handleDiagramInvalid(DiagramInvalidException ex, HttpServletRequest request) {
         // 422 Unprocessable Entity — ProblemDetail.forStatus accepts HttpStatusCode

@@ -23,6 +23,7 @@ import com.ibpms.repository.BusinessPolicyRepository;
 import com.ibpms.repository.DepartmentRepository;
 import com.ibpms.repository.ProcessDocumentRepository;
 import com.ibpms.repository.ProcessInstanceRepository;
+import com.ibpms.repository.UserRepository;
 import com.ibpms.service.api.ProcessService;
 import org.springframework.stereotype.Service;
 
@@ -42,19 +43,22 @@ public class ProcessServiceImpl implements ProcessService {
     private final ActivityTaskRepository taskRepository;
     private final DepartmentRepository departmentRepository;
     private final ProcessDocumentRepository documentRepository;
+    private final UserRepository userRepository;
 
     public ProcessServiceImpl(WorkflowEngine workflowEngine,
                               ProcessInstanceRepository processInstanceRepository,
                               BusinessPolicyRepository policyRepository,
                               ActivityTaskRepository taskRepository,
                               DepartmentRepository departmentRepository,
-                              ProcessDocumentRepository documentRepository) {
+                              ProcessDocumentRepository documentRepository,
+                              UserRepository userRepository) {
         this.workflowEngine = workflowEngine;
         this.processInstanceRepository = processInstanceRepository;
         this.policyRepository = policyRepository;
         this.taskRepository = taskRepository;
         this.departmentRepository = departmentRepository;
         this.documentRepository = documentRepository;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -160,6 +164,7 @@ public class ProcessServiceImpl implements ProcessService {
         String currentDepartmentId = null;
         String currentDepartmentName = null;
         List<NodeProgressItem> nodeProgress = List.of();
+        String pendingClientAction = null;
 
         var policyOpt = policyRepository.findById(instance.getBusinessPolicyId());
         if (policyOpt.isPresent()) {
@@ -194,7 +199,17 @@ public class ProcessServiceImpl implements ProcessService {
 
             // Build visual progress timeline (RF-00b)
             nodeProgress = buildNodeProgress(instance, policy);
+
+            // What does the CLIENT need to do now? (pending mandatory document at the current node)
+            pendingClientAction = computePendingClientAction(instance, policy);
         }
+
+        // % of stages completed (ACTION nodes only)
+        int total = nodeProgress.size();
+        long done = nodeProgress.stream().filter(n -> "COMPLETED".equals(n.progressStatus())).count();
+        int progressPercent = (instance.getStatus() == com.ibpms.domain.enums.InstanceStatus.COMPLETED)
+                ? 100
+                : (total > 0 ? (int) Math.round(done * 100.0 / total) : 0);
 
         return new ProcessStatusResponse(
                 instance.getId(),
@@ -208,8 +223,38 @@ public class ProcessServiceImpl implements ProcessService {
                 instance.getCompletedAt(),
                 instance.getClientId(),
                 policyName,
-                nodeProgress
+                nodeProgress,
+                progressPercent,
+                pendingClientAction
         );
+    }
+
+    /**
+     * If the trámite is active and the current node requires a document the CLIENT must still
+     * upload (uploaderRole CLIENT, uploadStage = current node, not yet confirmed), returns a
+     * human-friendly call to action. Otherwise null (nothing pending from the client).
+     */
+    private String computePendingClientAction(ProcessInstance instance, BusinessPolicy policy) {
+        if (instance.getStatus() != com.ibpms.domain.enums.InstanceStatus.ACTIVE) return null;
+        if (policy.getDocumentRequirements() == null) return null;
+
+        String currentNodeId = instance.getCurrentNodeId();
+        Set<String> confirmedReqIds = documentRepository
+                .findByProcessInstanceIdAndStatusNot(instance.getId(),
+                        com.ibpms.domain.enums.DocumentStatus.DELETED)
+                .stream()
+                .filter(d -> d.getStatus() == com.ibpms.domain.enums.DocumentStatus.CONFIRMED)
+                .map(com.ibpms.domain.ProcessDocument::getDocumentRequirementId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+
+        return policy.getDocumentRequirements().stream()
+                .filter(r -> "CLIENT".equalsIgnoreCase(r.getUploaderRole()))
+                .filter(r -> currentNodeId != null && currentNodeId.equals(r.getUploadStage()))
+                .filter(r -> !confirmedReqIds.contains(r.getId()))
+                .map(r -> "Debes subir: " + r.getName())
+                .findFirst()
+                .orElse(null);
     }
 
     /**
@@ -225,6 +270,23 @@ public class ProcessServiceImpl implements ProcessService {
         List<ActivityTask> tasks = taskRepository.findByProcessInstanceId(instance.getId());
         Map<String, ActivityTask> taskByNodeId = tasks.stream()
                 .collect(Collectors.toMap(ActivityTask::getNodeId, Function.identity(), (a, b) -> a));
+
+        // Resolve responsible employee names (assignedUserId → username)
+        Set<String> assignedUserIds = tasks.stream()
+                .map(ActivityTask::getAssignedUserId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toSet());
+        Map<String, String> userNameById = userRepository.findAllById(assignedUserIds).stream()
+                .collect(Collectors.toMap(com.ibpms.domain.User::getId,
+                        u -> u.getUsername() != null ? u.getUsername() : u.getEmail(), (a, b) -> a));
+
+        // Count documents attached to each task (per stage)
+        Map<String, Long> docCountByTaskId = documentRepository
+                .findByProcessInstanceIdAndStatusNot(instance.getId(),
+                        com.ibpms.domain.enums.DocumentStatus.DELETED)
+                .stream()
+                .filter(d -> d.getTaskId() != null)
+                .collect(Collectors.groupingBy(com.ibpms.domain.ProcessDocument::getTaskId, Collectors.counting()));
 
         // Build department name lookup
         Set<String> deptIds = policy.getPartitions() == null ? Set.of() :
@@ -248,6 +310,8 @@ public class ProcessServiceImpl implements ProcessService {
                     ActivityTask task = taskByNodeId.get(node.getId());
                     String progressStatus;
                     java.time.LocalDateTime completedAt = null;
+                    String assignedToName = null;
+                    int documentCount = 0;
 
                     if (task == null) {
                         progressStatus = "PENDING";
@@ -257,13 +321,19 @@ public class ProcessServiceImpl implements ProcessService {
                     } else {
                         progressStatus = "CURRENT";
                     }
+                    if (task != null) {
+                        assignedToName = userNameById.get(task.getAssignedUserId());
+                        documentCount = docCountByTaskId.getOrDefault(task.getId(), 0L).intValue();
+                    }
 
                     return new NodeProgressItem(
                             node.getId(),
                             node.getLabel(),
                             deptName,
                             progressStatus,
-                            completedAt
+                            completedAt,
+                            assignedToName,
+                            documentCount
                     );
                 })
                 .toList();

@@ -1,7 +1,9 @@
 package com.ibpms.controller;
 
+import com.ibpms.dto.request.CreateBlankDocumentRequest;
 import com.ibpms.dto.request.InitiateDocumentUploadRequest;
 import com.ibpms.dto.request.InitiatePreProcessUploadRequest;
+import com.ibpms.dto.request.UpdateDocumentPermissionsRequest;
 import com.ibpms.dto.response.AuditLogResponse;
 import com.ibpms.dto.response.DocumentDownloadResponse;
 import com.ibpms.dto.response.DocumentResponse;
@@ -43,12 +45,13 @@ public class DocumentController {
     @PreAuthorize("hasAnyAuthority('CLIENT', 'EMPLOYEE', 'ADMIN_DESIGNER')")
     public ResponseEntity<DocumentUploadInitiateResponse> initiatePreProcessUpload(
             @Valid @RequestBody InitiatePreProcessUploadRequest request,
-            Authentication authentication) {
+            Authentication authentication,
+            @RequestAttribute(value = "departmentId", required = false) String departmentId) {
         String userId = (String) authentication.getPrincipal();
         String userRole = authentication.getAuthorities().iterator().next().getAuthority();
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(documentService.initiatePreProcessUpload(request, userId, userRole));
+                .body(documentService.initiatePreProcessUpload(request, userId, userRole, departmentId));
     }
 
     /**
@@ -59,12 +62,13 @@ public class DocumentController {
     @PreAuthorize("hasAnyAuthority('CLIENT', 'EMPLOYEE', 'ADMIN_DESIGNER')")
     public ResponseEntity<DocumentUploadInitiateResponse> initiateUpload(
             @Valid @RequestBody InitiateDocumentUploadRequest request,
-            Authentication authentication) {
+            Authentication authentication,
+            @RequestAttribute(value = "departmentId", required = false) String departmentId) {
         String userId = (String) authentication.getPrincipal();
         String userRole = authentication.getAuthorities().iterator().next().getAuthority();
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(documentService.initiateUpload(request, userId, userRole));
+                .body(documentService.initiateUpload(request, userId, userRole, departmentId));
     }
 
     /**
@@ -75,10 +79,11 @@ public class DocumentController {
     @PreAuthorize("hasAnyAuthority('CLIENT', 'EMPLOYEE', 'ADMIN_DESIGNER')")
     public ResponseEntity<DocumentResponse> confirmUpload(
             @PathVariable String id,
-            Authentication authentication) {
+            Authentication authentication,
+            @RequestAttribute(value = "departmentId", required = false) String departmentId) {
         String userId = (String) authentication.getPrincipal();
         String userRole = authentication.getAuthorities().iterator().next().getAuthority();
-        return ResponseEntity.ok(documentService.confirmUpload(id, userId, userRole));
+        return ResponseEntity.ok(documentService.confirmUpload(id, userId, userRole, departmentId));
     }
 
     /**
@@ -89,10 +94,11 @@ public class DocumentController {
     public ResponseEntity<DocumentDownloadResponse> download(
             @PathVariable String id,
             Authentication authentication,
+            @RequestAttribute(value = "departmentId", required = false) String departmentId,
             HttpServletRequest httpRequest) {
         String userId = (String) authentication.getPrincipal();
         String userRole = authentication.getAuthorities().iterator().next().getAuthority();
-        return ResponseEntity.ok(documentService.download(id, userId, userRole, httpRequest));
+        return ResponseEntity.ok(documentService.download(id, userId, userRole, departmentId, httpRequest));
     }
 
     /**
@@ -105,10 +111,11 @@ public class DocumentController {
             @PathVariable String id,
             @RequestParam(required = false) String fileName,
             @RequestParam(required = false) String mimeType,
-            Authentication authentication) {
+            Authentication authentication,
+            @RequestAttribute(value = "departmentId", required = false) String departmentId) {
         String userId = (String) authentication.getPrincipal();
         String userRole = authentication.getAuthorities().iterator().next().getAuthority();
-        return ResponseEntity.ok(documentService.newVersion(id, fileName, mimeType, userId, userRole));
+        return ResponseEntity.ok(documentService.newVersion(id, fileName, mimeType, userId, userRole, departmentId));
     }
 
     /**
@@ -120,10 +127,11 @@ public class DocumentController {
     public ResponseEntity<Void> delete(
             @PathVariable String id,
             Authentication authentication,
+            @RequestAttribute(value = "departmentId", required = false) String departmentId,
             HttpServletRequest httpRequest) {
         String userId = (String) authentication.getPrincipal();
         String userRole = authentication.getAuthorities().iterator().next().getAuthority();
-        documentService.delete(id, userId, userRole, httpRequest);
+        documentService.delete(id, userId, userRole, departmentId, httpRequest);
         return ResponseEntity.noContent().build();
     }
 
@@ -134,6 +142,49 @@ public class DocumentController {
     @PreAuthorize("hasAuthority('ADMIN_DESIGNER')")
     public ResponseEntity<List<AuditLogResponse>> getAuditLog(@PathVariable String id) {
         return ResponseEntity.ok(documentService.getAuditLog(id));
+    }
+
+    /**
+     * RF-1.5 / RF-1.9: Reassign the document ACL (read / write / delete).
+     * ADMIN_DESIGNER only. Records a PERMISSION_CHANGE audit entry.
+     */
+    @PatchMapping("/{id}/permissions")
+    @PreAuthorize("hasAuthority('ADMIN_DESIGNER')")
+    public ResponseEntity<DocumentResponse> updatePermissions(
+            @PathVariable String id,
+            @Valid @RequestBody UpdateDocumentPermissionsRequest request,
+            Authentication authentication) {
+        String userId = (String) authentication.getPrincipal();
+        String userRole = authentication.getAuthorities().iterator().next().getAuthority();
+        return ResponseEntity.ok(documentService.updatePermissions(id, request, userId, userRole));
+    }
+
+    /**
+     * RF-1.10: a functionary creates a blank Office document (Word/Excel) at the node they work,
+     * to fill it collaboratively with their department. Returns the created document.
+     */
+    @PostMapping("/create-blank")
+    @PreAuthorize("hasAnyAuthority('EMPLOYEE', 'ADMIN_DESIGNER')")
+    public ResponseEntity<DocumentResponse> createBlank(
+            @Valid @RequestBody CreateBlankDocumentRequest request,
+            Authentication authentication,
+            @RequestAttribute(value = "departmentId", required = false) String departmentId) {
+        String userId = (String) authentication.getPrincipal();
+        String userRole = authentication.getAuthorities().iterator().next().getAuthority();
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(documentService.createBlankDocument(request, userId, userRole, departmentId));
+    }
+
+    /**
+     * RF-1.10 discovery: documents the caller's department must work now (its departmentId is in the
+     * ACL and the trámite is active). The functionary's "my department documents" inbox.
+     */
+    @GetMapping("/my-department")
+    @PreAuthorize("hasAnyAuthority('EMPLOYEE', 'ADMIN_DESIGNER')")
+    public ResponseEntity<List<DocumentResponse>> myDepartment(
+            @RequestAttribute(value = "departmentId", required = false) String departmentId) {
+        return ResponseEntity.ok(documentService.listByDepartment(departmentId));
     }
 
     /**

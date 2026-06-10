@@ -20,5 +20,7 @@ public record ProcessStatusResponse(
         LocalDateTime completedAt,
         String clientId,
         String policyName,
-        List<NodeProgressItem> nodeProgress
+        List<NodeProgressItem> nodeProgress,
+        int progressPercent,         // % de etapas completadas (0-100)
+        String pendingClientAction   // qué debe hacer el cliente ahora (null si nada)
 ) {}

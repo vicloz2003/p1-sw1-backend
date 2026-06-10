@@ -6,5 +6,6 @@ public enum DocumentAction {
     UPLOAD,
     REPLACE,
     DELETE,
+    PERMISSION_CHANGE,
     PERMISSION_CHECK_FAILED
 }

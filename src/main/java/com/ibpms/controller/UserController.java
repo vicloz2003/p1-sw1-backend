@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -69,6 +70,20 @@ public class UserController {
     public ResponseEntity<List<UserResponse>> search(
             @RequestParam String email) {
         return ResponseEntity.ok(userService.searchByEmail(email));
+    }
+
+    @GetMapping("/suggest")
+    @PreAuthorize("hasAuthority('ADMIN_DESIGNER')")
+    public ResponseEntity<List<UserResponse>> suggest(
+            @RequestParam String q) {
+        if (q == null || q.isBlank() || q.length() < 2) return ResponseEntity.ok(List.of());
+        return ResponseEntity.ok(userService.search(q));
+    }
+
+    @PostMapping("/batch")
+    @PreAuthorize("hasAuthority('ADMIN_DESIGNER')")
+    public ResponseEntity<List<UserResponse>> batch(@RequestBody List<String> ids) {
+        return ResponseEntity.ok(userService.getByIds(ids));
     }
 }
 

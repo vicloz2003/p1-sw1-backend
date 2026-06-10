@@ -323,14 +323,14 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 .collect(Collectors.groupingBy(
                         ActivityTask::getNodeId,
                         Collectors.averagingDouble(t ->
-                                Duration.between(t.getAssignedAt(), t.getCompletedAt()).toSeconds())
+                                Duration.between(t.getAssignedAt(), t.getCompletedAt()).toMinutes() / 60.0)
                 ))
                 .entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue(Comparator.reverseOrder()))
                 .map(e -> new BottleneckResponse(
                         e.getKey(),
                         labelByNodeId.getOrDefault(e.getKey(), e.getKey()),
-                        e.getValue()
+                        Math.round(e.getValue() * 100.0) / 100.0
                 ))
                 .toList();
     }

@@ -15,6 +15,7 @@ public record TaskResponse(
         Map<String, Object> formSchema,
         LocalDateTime assignedAt,
         LocalDateTime claimedAt,   // cuándo el empleado reclamó la tarea (null si PENDING)
-        String policyName          // nombre de la política, para diferenciar tarjetas
+        String policyName,         // nombre de la política, para diferenciar tarjetas
+        String clientName          // nombre del solicitante (cliente) que inició el proceso
 ) {}
 

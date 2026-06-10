@@ -16,5 +16,6 @@ public record AuditLogResponse(
         DocumentAction action,
         LocalDateTime timestamp,
         String ipAddress,
-        String detail
+        String detail,
+        String userName   // nombre legible del usuario que realizó la acción
 ) {}

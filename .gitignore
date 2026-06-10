@@ -37,3 +37,7 @@ DOMAIN.md
 
 ### Local run logs ###
 *.log
+*.err
+
+### Secrets — never commit ###
+firebase-service-account.json

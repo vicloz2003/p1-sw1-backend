@@ -56,6 +56,10 @@ public class SecurityConfig {
                         // It authenticates with the OnlyOffice JWT (verified in the service),
                         // not the app's user JWT, so it must be public at the HTTP layer (RF-1.10).
                         .requestMatchers(HttpMethod.POST, "/api/v1/documents/onlyoffice/callback").permitAll()
+                        // The Document Server downloads the file to edit from here (instead of a
+                        // presigned S3 URL, which its HTTP client mangles). Authenticated by a
+                        // short-lived signed token in the query string (verified in the service).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/documents/*/onlyoffice/content").permitAll()
                         // SockJS/WebSocket handshakes are established before STOMP CONNECT processing.
                         // Authentication for messaging is enforced by the WebSocket/STOMP layer,
                         // so the HTTP handshake endpoint must remain accessible here.

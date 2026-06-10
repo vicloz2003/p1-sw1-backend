@@ -3,6 +3,8 @@ package com.ibpms.controller;
 import com.ibpms.dto.request.OnlyOfficeCallbackRequest;
 import com.ibpms.dto.response.OnlyOfficeConfigResponse;
 import com.ibpms.service.api.OnlyOfficeService;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -31,10 +33,37 @@ public class OnlyOfficeController {
     @PreAuthorize("hasAnyAuthority('CLIENT', 'EMPLOYEE', 'ADMIN_DESIGNER')")
     public ResponseEntity<OnlyOfficeConfigResponse> getConfig(
             @PathVariable String id,
-            Authentication authentication) {
+            Authentication authentication,
+            @RequestAttribute(value = "departmentId", required = false) String departmentId,
+            HttpServletRequest httpRequest) {
         String userId = (String) authentication.getPrincipal();
         String userRole = authentication.getAuthorities().iterator().next().getAuthority();
-        return ResponseEntity.ok(onlyOfficeService.buildEditorConfig(id, userId, userRole));
+        String ip = extractIp(httpRequest);
+        return ResponseEntity.ok(onlyOfficeService.buildEditorConfig(id, userId, userRole, departmentId, ip));
+    }
+
+    private static String extractIp(HttpServletRequest request) {
+        if (request == null) return null;
+        String forwarded = request.getHeader("X-Forwarded-For");
+        return (forwarded != null && !forwarded.isBlank())
+                ? forwarded.split(",")[0].trim()
+                : request.getRemoteAddr();
+    }
+
+    /**
+     * Streams the raw document bytes for the Document Server to download (RF-1.10).
+     * Public at the HTTP layer (the DS has no user JWT); authenticated by the signed
+     * {@code dt} token issued in the editor config.
+     */
+    @GetMapping("/{id}/onlyoffice/content")
+    public ResponseEntity<byte[]> getContent(
+            @PathVariable String id,
+            @RequestParam("dt") String token) {
+        OnlyOfficeService.DocumentContent c = onlyOfficeService.getDocumentContent(id, token);
+        MediaType type = c.mimeType() != null
+                ? MediaType.parseMediaType(c.mimeType())
+                : MediaType.APPLICATION_OCTET_STREAM;
+        return ResponseEntity.ok().contentType(type).body(c.content());
     }
 
     /**

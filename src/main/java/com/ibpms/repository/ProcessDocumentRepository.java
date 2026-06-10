@@ -15,6 +15,9 @@ public interface ProcessDocumentRepository extends MongoRepository<ProcessDocume
     List<ProcessDocument> findByProcessInstanceIdAndStatusNot(String processInstanceId,
                                                                DocumentStatus status);
 
+    /** All documents not in the given status (used for the department inbox, RF-1.10). */
+    List<ProcessDocument> findByStatusNot(DocumentStatus status);
+
     /** Documents linked to a specific task (RF-03). */
     List<ProcessDocument> findByTaskId(String taskId);
 

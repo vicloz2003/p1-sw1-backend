@@ -31,6 +31,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -38,18 +39,20 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Generates a COHERENT demo dataset for KPI / analytics demonstration:
- * 3 active business policies (+1 draft), realistic completed/active/cancelled
- * process instances and tasks with believable timestamps.
+ * Generates a COHERENT demo dataset for ELECSUR — Empresa Eléctrica.
+ *
+ * <p>Policies modelled on real electricity-company workflows: meter installation,
+ * service reconnection, billing complaints and capacity upgrades. Employees are
+ * assigned to their specific departments by {@link DataSeeder}; this seeder only
+ * generates policies and process instances on top of that foundation.
  *
  * <p><strong>Activation:</strong> set {@code ibpms.demo-seed=true} (default false).
- * When enabled, it WIPES policies, instances, tasks and documents, then reseeds.
- * Run once with the flag on, then set it back to false so your own test data
- * is not erased on the next restart. Users and departments are preserved
- * (employees get a department assigned).
+ * When enabled it WIPES policies, instances, tasks and documents, then reseeds.
+ * Run once with the flag on, then set it back to false so your own test data is
+ * not erased on the next restart. Users and departments are preserved.
  *
- * <p>Departments are referenced by INDEX into whatever departments actually exist
- * in the DB (not by hardcoded name), so the seeder is robust to any DB state.
+ * <p>Department references use canonical names (see {@link DataSeeder#seedDepartments})
+ * so the seeder is robust to any MongoDB document-order.
  */
 @Component
 @Order(Ordered.LOWEST_PRECEDENCE)
@@ -65,7 +68,8 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
 
     private final boolean demoSeedEnabled;
 
-    private final Random rnd = new Random(42); // fixed seed → reproducible dataset
+    /** Fixed seed → reproducible dataset across restarts. */
+    private final Random rnd = new Random(42);
 
     public DemoDataSeeder(BusinessPolicyRepository policyRepository,
                           ProcessInstanceRepository instanceRepository,
@@ -87,19 +91,18 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
 
     @Override
     public void onApplicationEvent(ApplicationReadyEvent event) {
-        if (!demoSeedEnabled) {
-            return;
-        }
-        System.out.println("[DEMO-SEED] ibpms.demo-seed=true → wiping and regenerating demo data...");
+        if (!demoSeedEnabled) return;
+        System.out.println("[DEMO-SEED] ibpms.demo-seed=true → wiping and regenerating demo data…");
 
-        List<Department> departments = departmentRepository.findAll();
-        if (departments.isEmpty()) {
+        // Index departments by canonical name for O(1) look-up
+        Map<String, Department> deptByName = departmentRepository.findAll().stream()
+                .collect(Collectors.toMap(Department::name, d -> d));
+
+        if (deptByName.isEmpty()) {
             System.out.println("[DEMO-SEED] Aborted — no departments found. Seed departments first.");
             return;
         }
 
-        wipe();
-        assignDepartmentsToEmployees(departments);
         Map<String, List<User>> employeesByDept = employeesByDepartment();
         List<User> clients = usersByRole(SystemRole.CLIENT);
         String adminId = usersByRole(SystemRole.ADMIN_DESIGNER).stream()
@@ -110,7 +113,9 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
             return;
         }
 
-        List<BusinessPolicy> policies = seedPolicies(departments, adminId);
+        wipe();
+
+        List<BusinessPolicy> policies = seedPolicies(deptByName, adminId);
 
         int totalInstances = 0;
         for (BusinessPolicy policy : policies) {
@@ -118,9 +123,9 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
             totalInstances += generateInstancesFor(policy, employeesByDept, clients);
         }
 
-        System.out.println("[DEMO-SEED] Done. Policies: " + policies.size()
-                + ", instances: " + totalInstances);
-        System.out.println("[DEMO-SEED] Remember to set ibpms.demo-seed=false to keep your test data.");
+        System.out.println("[DEMO-SEED] Done. Políticas: " + policies.size()
+                + ", instancias: " + totalInstances);
+        System.out.println("[DEMO-SEED] Remember to set ibpms.demo-seed=false to keep your data.");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -136,20 +141,8 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Users / departments
+    // Users helpers
     // ─────────────────────────────────────────────────────────────────────────
-
-    /** Assigns each EMPLOYEE to a department (round-robin over real departments). */
-    private void assignDepartmentsToEmployees(List<Department> departments) {
-        List<User> employees = usersByRole(SystemRole.EMPLOYEE);
-        if (departments.isEmpty() || employees.isEmpty()) return;
-
-        for (int i = 0; i < employees.size(); i++) {
-            Department dept = departments.get(i % departments.size());
-            employees.get(i).setDepartmentId(dept.id());
-        }
-        userRepository.saveAll(employees);
-    }
 
     private Map<String, List<User>> employeesByDepartment() {
         return usersByRole(SystemRole.EMPLOYEE).stream()
@@ -164,11 +157,18 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Policies
+    // Policy definitions — ELECSUR electricity company
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** A single ACTION step. {@code deptIndex} is resolved against the real department list. */
-    private record Step(String label, int deptIndex, long slaSeconds,
+    /**
+     * A single ACTION step.
+     *
+     * @param label      Human-readable step name shown in the UI.
+     * @param deptName   Canonical department name (must match stored value in MongoDB).
+     * @param slaSeconds Target SLA for this step in seconds.
+     * @param formFields Dynamic form fields for task completion.
+     */
+    private record Step(String label, String deptName, long slaSeconds,
                         List<Map<String, Object>> formFields) {}
 
     /** Shorthand to build a form field map matching the Angular FormField interface. */
@@ -183,141 +183,173 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
         return f;
     }
 
-    private List<BusinessPolicy> seedPolicies(List<Department> departments, String adminId) {
+    private List<BusinessPolicy> seedPolicies(Map<String, Department> deptByName, String adminId) {
         List<BusinessPolicy> policies = new ArrayList<>();
 
-        // 1) Solicitud de Crédito Personal (ACTIVE)
+        // ── 1) Instalación de Nuevo Medidor (ACTIVE) ─────────────────────────
         policies.add(buildPolicy(
-                "Solicitud de Credito Personal",
-                "Evaluacion y otorgamiento de creditos personales a clientes.",
-                List.of("credito", "prestamo", "financiamiento"),
+                "Instalacion de Nuevo Medidor",
+                "Proceso completo para instalar un medidor eléctrico en un nuevo punto de suministro.",
+                List.of("medidor", "instalacion", "nuevo-servicio", "electricidad"),
                 List.of(
-                    new Step("Registrar solicitud", 0, 3600, List.of(
-                        field("nombre_solicitante", "TEXT",   "Nombre completo del solicitante", true,  null),
-                        field("monto_solicitado",   "NUMBER", "Monto solicitado (USD)",          true,  null),
-                        field("plazo_meses",        "SELECT", "Plazo en meses",                  true,
-                              List.of("12", "24", "36", "48", "60")),
-                        field("proposito",          "TEXTAREA","Propósito del crédito",          true,  null)
+                    new Step("Registrar Solicitud", "Atencion Al Cliente", 3_600, List.of(
+                        field("nombre_titular",    "TEXT",    "Nombre del titular",              true,  null),
+                        field("cedula",            "TEXT",    "Número de cédula",                true,  null),
+                        field("direccion",         "TEXTAREA","Dirección del inmueble",          true,  null),
+                        field("telefono",          "TEXT",    "Teléfono de contacto",            true,  null),
+                        field("tipo_suministro",   "SELECT",  "Tipo de suministro",              true,
+                              List.of("RESIDENCIAL", "COMERCIAL", "INDUSTRIAL"))
                     )),
-                    new Step("Evaluar viabilidad", 1, 14400, List.of(
-                        field("score_crediticio",   "NUMBER", "Score crediticio obtenido",       true,  null),
-                        field("resultado",          "SELECT", "Resultado de evaluación",         true,
-                              List.of("APROBADO", "APROBADO_CON_CONDICIONES", "RECHAZADO")),
-                        field("observaciones",      "TEXTAREA","Observaciones del analista",     false, null)
+                    new Step("Inspeccion de Factibilidad", "Departamento Tecnico", 14_400, List.of(
+                        field("factibilidad",      "SELECT",  "Resultado de inspección",         true,
+                              List.of("FACTIBLE", "NO_FACTIBLE", "FACTIBLE_CON_ADECUACIONES")),
+                        field("distancia_red",     "NUMBER",  "Distancia a red existente (m)",   true,  null),
+                        field("observaciones_tec", "TEXTAREA","Observaciones técnicas",          false, null),
+                        field("fecha_inspeccion",  "DATE",    "Fecha de inspección",             true,  null)
                     )),
-                    new Step("Revision legal", 2, 28800, List.of(
-                        field("conformidad_legal",  "SELECT", "Conformidad legal",               true,
-                              List.of("CONFORME", "NO_CONFORME", "PENDIENTE_SUBSANACION")),
-                        field("numero_contrato",    "TEXT",   "Número de contrato generado",    true,  null),
-                        field("firma_cliente",      "SIGNATURE","Firma del cliente",             true,  null)
+                    new Step("Firma de Contrato", "Departamento Legal", 28_800, List.of(
+                        field("numero_contrato",   "TEXT",    "Número de contrato generado",     true,  null),
+                        field("tipo_tarifa",       "SELECT",  "Tarifa aplicable",                true,
+                              List.of("TARIFA_1", "TARIFA_2", "TARIFA_3", "TARIFA_4")),
+                        field("conformidad_legal",  "SELECT",  "Conformidad legal",              true,
+                              List.of("CONFORME", "PENDIENTE_SUBSANACION")),
+                        field("firma_cliente",     "SIGNATURE","Firma del cliente",              true,  null)
                     )),
-                    new Step("Desembolso", 3, 7200, List.of(
-                        field("monto_desembolsado", "NUMBER", "Monto desembolsado (USD)",        true,  null),
-                        field("numero_cuenta",      "TEXT",   "Número de cuenta destino",        true,  null),
-                        field("fecha_desembolso",   "DATE",   "Fecha de desembolso",             true,  null)
+                    new Step("Instalacion del Medidor", "Operaciones De Campo", 21_600, List.of(
+                        field("numero_serie_medidor","TEXT",  "N/S del medidor instalado",       true,  null),
+                        field("tipo_medidor",      "SELECT",  "Tipo de medidor",                 true,
+                              List.of("MONOFASICO", "TRIFASICO", "PREPAGO")),
+                        field("lectura_inicial",   "NUMBER",  "Lectura inicial (kWh)",           true,  null),
+                        field("foto_instalacion",  "TEXT",    "Referencia fotográfica",          false, null)
+                    )),
+                    new Step("Activacion del Servicio", "Facturacion", 7_200, List.of(
+                        field("cuenta_cliente",    "TEXT",    "Número de cuenta eléctrica",      true,  null),
+                        field("fecha_activacion",  "DATE",    "Fecha de activación",             true,  null),
+                        field("deposito_garantia", "NUMBER",  "Depósito de garantía (USD)",      true,  null),
+                        field("metodo_pago",       "SELECT",  "Método de pago",                  true,
+                              List.of("EFECTIVO", "TRANSFERENCIA", "TARJETA_DEBITO"))
                     ))
                 ),
                 List.of(
-                    docReq("Cedula de identidad", "Documento de identidad vigente",
+                    docReq("Cédula de identidad",
+                           "Documento de identidad vigente del titular",
                            List.of("application/pdf", "image/jpeg", "image/png"), true),
-                    docReq("Comprobante de ingresos", "Ultimas 3 boletas de pago",
-                           List.of("application/pdf"), true)
+                    docReq("Título de propiedad o arriendo",
+                           "Documento que acredite la tenencia del inmueble",
+                           List.of("application/pdf", "image/jpeg"), true),
+                    docReq("Plano eléctrico interno",
+                           "Plano eléctrico interno del inmueble (opcional para residencial)",
+                           List.of("application/pdf"), false)
                 ),
-                departments, adminId, PolicyStatus.ACTIVE));
+                deptByName, adminId, PolicyStatus.ACTIVE));
 
-        // 2) Contratación de Servicio (ACTIVE)
+        // ── 2) Reconexión de Servicio Eléctrico (ACTIVE) ─────────────────────
         policies.add(buildPolicy(
-                "Contratacion de Servicio de Internet",
-                "Alta de un nuevo servicio de internet e instalacion de equipo.",
-                List.of("servicio", "contratacion", "instalacion", "internet"),
+                "Reconexion de Servicio Electrico",
+                "Restablecimiento del servicio eléctrico tras suspensión por falta de pago u otras causas.",
+                List.of("reconexion", "suspension", "pago", "servicio"),
                 List.of(
-                    new Step("Registrar contratacion", 0, 1800, List.of(
-                        field("plan_seleccionado",  "SELECT", "Plan de internet",                true,
-                              List.of("BASICO_50MB", "ESTANDAR_100MB", "PREMIUM_300MB", "EMPRESARIAL_1GB")),
-                        field("direccion",          "TEXT",   "Dirección de instalación",       true,  null),
-                        field("telefono_contacto",  "TEXT",   "Teléfono de contacto",           true,  null)
+                    new Step("Registrar Solicitud", "Atencion Al Cliente", 1_800, List.of(
+                        field("numero_cuenta",     "TEXT",    "Número de cuenta eléctrica",      true,  null),
+                        field("nombre_titular",    "TEXT",    "Nombre del titular",              true,  null),
+                        field("motivo_solicitud",  "SELECT",  "Motivo de la solicitud",          true,
+                              List.of("PAGO_REALIZADO", "ERROR_ADMINISTRATIVO", "ACUERDO_PAGO")),
+                        field("telefono",          "TEXT",    "Teléfono de contacto",            true,  null)
                     )),
-                    new Step("Verificar cobertura tecnica", 1, 7200, List.of(
-                        field("cobertura",          "SELECT", "Cobertura disponible",            true,
-                              List.of("DISPONIBLE", "NO_DISPONIBLE", "PARCIAL")),
-                        field("velocidad_maxima",   "NUMBER", "Velocidad máxima disponible (MB)",true, null),
-                        field("observaciones",      "TEXTAREA","Observaciones técnicas",         false, null)
+                    new Step("Verificar Estado de Cuenta", "Facturacion", 7_200, List.of(
+                        field("deuda_pendiente",   "NUMBER",  "Deuda pendiente (USD)",           true,  null),
+                        field("estado_cuenta",     "SELECT",  "Estado de cuenta",                true,
+                              List.of("SALDADO", "ACUERDO_VIGENTE", "PENDIENTE_PAGO")),
+                        field("numero_recibo",     "TEXT",    "Número de recibo de pago",        false, null),
+                        field("observaciones",     "TEXTAREA","Observaciones de facturación",    false, null)
                     )),
-                    new Step("Asignar equipo", 4, 10800, List.of(
-                        field("numero_serie_router","TEXT",   "Número de serie del router",      true,  null),
-                        field("modelo_router",      "TEXT",   "Modelo del equipo asignado",      true,  null),
-                        field("fecha_instalacion",  "DATE",   "Fecha programada de instalación", true,  null)
+                    new Step("Ejecutar Reconexion", "Operaciones De Campo", 10_800, List.of(
+                        field("tecnico_responsable","TEXT",   "Nombre del técnico asignado",     true,  null),
+                        field("fecha_reconexion",  "DATE",    "Fecha de reconexión",             true,  null),
+                        field("lectura_actual",    "NUMBER",  "Lectura al momento de reconexión (kWh)", true, null),
+                        field("resultado",         "SELECT",  "Resultado de la reconexión",      true,
+                              List.of("EXITOSA", "FALLIDA_EQUIPO", "FALLIDA_ACCESO")),
+                        field("observaciones",     "TEXTAREA","Observaciones de campo",         false, null)
+                    ))
+                ),
+                List.of(
+                    docReq("Comprobante de pago",
+                           "Recibo o comprobante bancario del pago realizado",
+                           List.of("application/pdf", "image/jpeg", "image/png"), true)
+                ),
+                deptByName, adminId, PolicyStatus.ACTIVE));
+
+        // ── 3) Reclamo por Facturación Incorrecta (ACTIVE) ───────────────────
+        policies.add(buildPolicy(
+                "Reclamo por Facturacion Incorrecta",
+                "Revisión y corrección de valores erróneos en planillas de consumo eléctrico.",
+                List.of("reclamo", "facturacion", "consumo", "planilla"),
+                List.of(
+                    new Step("Registrar Reclamo", "Atencion Al Cliente", 2_700, List.of(
+                        field("numero_cuenta",     "TEXT",    "Número de cuenta eléctrica",      true,  null),
+                        field("periodo_reclamo",   "TEXT",    "Período facturado en disputa (MM/YYYY)", true, null),
+                        field("valor_facturado",   "NUMBER",  "Valor facturado (USD)",           true,  null),
+                        field("valor_estimado",    "NUMBER",  "Valor estimado correcto (USD)",   false, null),
+                        field("descripcion",       "TEXTAREA","Descripción del reclamo",         true,  null)
                     )),
-                    new Step("Generar factura", 3, 3600, List.of(
-                        field("monto_total",        "NUMBER", "Monto total (USD)",               true,  null),
-                        field("metodo_pago",        "SELECT", "Método de pago",                  true,
-                              List.of("EFECTIVO", "TRANSFERENCIA", "TARJETA_CREDITO", "TARJETA_DEBITO")),
-                        field("numero_factura",     "TEXT",   "Número de factura emitida",       true,  null)
+                    new Step("Auditoria de Consumo", "Facturacion", 21_600, List.of(
+                        field("consumo_promedio",  "NUMBER",  "Consumo promedio últimos 6 meses (kWh)", true, null),
+                        field("consumo_facturado", "NUMBER",  "Consumo facturado en disputa (kWh)", true, null),
+                        field("variacion",         "NUMBER",  "Variación porcentual (%)",        true,  null),
+                        field("causa_variacion",   "SELECT",  "Causa identificada",              true,
+                              List.of("ERROR_LECTURA", "FALLA_MEDIDOR", "CONSUMO_REAL", "OTRO")),
+                        field("resultado_auditoria","SELECT", "Resultado de auditoría",          true,
+                              List.of("PROCEDE_AJUSTE", "NO_PROCEDE", "REQUIERE_INSPECCION"))
+                    )),
+                    new Step("Resolucion y Ajuste", "Departamento Legal", 14_400, List.of(
+                        field("resolucion",        "SELECT",  "Resolución final",                true,
+                              List.of("AJUSTE_APROBADO", "RECLAMO_NEGADO", "COMPENSACION_OTORGADA")),
+                        field("monto_ajuste",      "NUMBER",  "Monto de ajuste (USD, 0 si no aplica)", true, null),
+                        field("numero_nota_credito","TEXT",   "Número de nota de crédito",       false, null),
+                        field("observaciones_res", "TEXTAREA","Observaciones de resolución",     false, null)
+                    ))
+                ),
+                List.of(
+                    docReq("Planilla en disputa",
+                           "Copia de la planilla o factura que se está reclamando",
+                           List.of("application/pdf", "image/jpeg", "image/png"), true)
+                ),
+                deptByName, adminId, PolicyStatus.ACTIVE));
+
+        // ── 4) Ampliación de Capacidad Eléctrica (DRAFT) ─────────────────────
+        policies.add(buildPolicy(
+                "Ampliacion de Capacidad Electrica",
+                "Proceso de incremento de la potencia contratada para clientes comerciales e industriales. (En diseño)",
+                List.of("ampliacion", "capacidad", "potencia", "industrial"),
+                List.of(
+                    new Step("Registrar Solicitud", "Atencion Al Cliente", 1_800, List.of(
+                        field("numero_cuenta",     "TEXT",    "Número de cuenta eléctrica",      true,  null),
+                        field("capacidad_actual",  "NUMBER",  "Capacidad actual (kVA)",          true,  null),
+                        field("capacidad_requerida","NUMBER", "Capacidad requerida (kVA)",        true,  null),
+                        field("justificacion",     "TEXTAREA","Justificación de la ampliación",  true,  null)
+                    )),
+                    new Step("Evaluacion Tecnica", "Departamento Tecnico", 28_800, List.of(
+                        field("viabilidad",        "SELECT",  "Viabilidad técnica",              true,
+                              List.of("VIABLE", "NO_VIABLE", "VIABLE_CON_OBRAS")),
+                        field("costo_estimado",    "NUMBER",  "Costo estimado de obras (USD)",   false, null),
+                        field("plazo_estimado",    "TEXT",    "Plazo estimado (semanas)",         false, null),
+                        field("informe_tecnico",   "TEXTAREA","Informe técnico detallado",       true,  null)
                     ))
                 ),
                 List.of(),
-                departments, adminId, PolicyStatus.ACTIVE));
-
-        // 3) Reclamo de Garantía (ACTIVE)
-        policies.add(buildPolicy(
-                "Reclamo de Garantia",
-                "Gestion de reclamos de garantia y reemplazo de equipos.",
-                List.of("garantia", "reclamo", "reparacion", "soporte"),
-                List.of(
-                    new Step("Registrar reclamo", 0, 1800, List.of(
-                        field("descripcion_problema","TEXTAREA","Descripción del problema",      true,  null),
-                        field("numero_serie",        "TEXT",   "Número de serie del equipo",     true,  null),
-                        field("fecha_compra",        "DATE",   "Fecha de compra del equipo",     true,  null)
-                    )),
-                    new Step("Diagnostico tecnico", 1, 21600, List.of(
-                        field("causa_falla",        "SELECT", "Causa de la falla",               true,
-                              List.of("FALLA_HARDWARE", "FALLA_SOFTWARE", "DANO_FISICO", "USO_INADECUADO", "DEFECTO_FABRICA")),
-                        field("diagnostico",        "TEXTAREA","Diagnóstico detallado",          true,  null),
-                        field("requiere_reemplazo", "SELECT", "¿Requiere reemplazo?",            true,
-                              List.of("SI", "NO", "REPARACION_EN_SITIO"))
-                    )),
-                    new Step("Reemplazo de equipo", 4, 14400, List.of(
-                        field("numero_serie_nuevo", "TEXT",   "N/S del equipo de reemplazo",     true,  null),
-                        field("modelo_reemplazo",   "TEXT",   "Modelo del equipo de reemplazo",  true,  null),
-                        field("fecha_entrega",      "DATE",   "Fecha de entrega",                true,  null),
-                        field("firma_recepcion",    "SIGNATURE","Firma de recepción del cliente",true,  null)
-                    ))
-                ),
-                List.of(
-                    docReq("Factura de compra", "Comprobante original de la compra",
-                           List.of("application/pdf", "image/jpeg"), true)
-                ),
-                departments, adminId, PolicyStatus.ACTIVE));
-
-        // 4) Apertura de Cuenta (DRAFT)
-        policies.add(buildPolicy(
-                "Apertura de Cuenta de Ahorros",
-                "Proceso de apertura de cuenta de ahorros (en diseno).",
-                List.of("cuenta", "ahorro", "banca"),
-                List.of(
-                    new Step("Registrar datos del cliente", 0, 1800, List.of(
-                        field("nombres",            "TEXT",   "Nombres completos",               true,  null),
-                        field("tipo_cuenta",        "SELECT", "Tipo de cuenta",                  true,
-                              List.of("AHORRO_BASICA", "AHORRO_PLUS", "AHORRO_EMPRESARIAL")),
-                        field("deposito_inicial",   "NUMBER", "Depósito inicial (USD)",          true,  null)
-                    )),
-                    new Step("Validacion legal", 2, 7200, List.of(
-                        field("conformidad",        "SELECT", "Resultado de validación",         true,
-                              List.of("APROBADO", "RECHAZADO", "DOCUMENTACION_INCOMPLETA")),
-                        field("numero_cuenta",      "TEXT",   "Número de cuenta asignado",       false, null),
-                        field("observaciones",      "TEXTAREA","Observaciones",                  false, null)
-                    ))
-                ),
-                List.of(),
-                departments, adminId, PolicyStatus.DRAFT));
+                deptByName, adminId, PolicyStatus.DRAFT));
 
         policyRepository.saveAll(policies);
         return policies;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Policy builder
+    // ─────────────────────────────────────────────────────────────────────────
+
     private BusinessPolicy buildPolicy(String name, String description, List<String> tags,
                                        List<Step> steps, List<DocumentRequirement> docs,
-                                       List<Department> departments, String adminId,
+                                       Map<String, Department> deptByName, String adminId,
                                        PolicyStatus status) {
         BusinessPolicy policy = new BusinessPolicy();
         policy.setName(name);
@@ -337,12 +369,17 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
         String initialId = "node_initial";
         nodes.add(node(initialId, "Inicio", null, NodeType.INITIAL_NODE, null));
 
-        // Build one partition per distinct department index used in the steps
-        Map<Integer, String> partitionIdByDeptIndex = new HashMap<>();
+        // Build one partition per distinct department name used in the steps
+        // (preserves order of first appearance)
+        Map<String, String> partitionIdByDeptName = new LinkedHashMap<>();
         for (Step s : steps) {
-            partitionIdByDeptIndex.computeIfAbsent(s.deptIndex(), idx -> {
-                Department dept = departments.get(idx % departments.size());
-                String pid = "lane_" + partitionIdByDeptIndex.size();
+            partitionIdByDeptName.computeIfAbsent(s.deptName(), deptName -> {
+                Department dept = deptByName.get(deptName);
+                if (dept == null) {
+                    System.err.println("[DEMO-SEED] ⚠ Department not found: " + deptName);
+                    return null;
+                }
+                String pid = "lane_" + partitionIdByDeptName.size();
                 partitions.add(new ActivityPartition(pid, dept.name(), dept.id()));
                 return pid;
             });
@@ -352,14 +389,14 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
         String prevId = initialId;
         for (int i = 0; i < steps.size(); i++) {
             Step s = steps.get(i);
+            String partitionId = partitionIdByDeptName.get(s.deptName());
             String nodeId = "node_action_" + i;
             Map<String, String> meta = new HashMap<>();
             meta.put("slaSeconds", String.valueOf(s.slaSeconds()));
             Map<String, Object> formSchema = s.formFields() != null && !s.formFields().isEmpty()
                     ? Map.of("fields", s.formFields())
                     : new HashMap<>();
-            nodes.add(nodeWithForm(nodeId, s.label(), partitionIdByDeptIndex.get(s.deptIndex()),
-                    NodeType.ACTION, meta, formSchema));
+            nodes.add(nodeWithForm(nodeId, s.label(), partitionId, NodeType.ACTION, meta, formSchema));
             flows.add(flow(prevId, nodeId));
             prevId = nodeId;
         }
@@ -390,7 +427,6 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
             laneIndexByPartition.put(partitions.get(i).getId(), i);
         }
 
-        // Linear column layout in node declaration order (initial → actions → final)
         Map<String, Integer> colByNode = new HashMap<>();
         int col = 0;
         for (ActivityNode n : nodes) colByNode.put(n.getId(), col++);
@@ -399,7 +435,7 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
         int participantW = 60 + totalCols * COL_W + 20;
         int participantH = numLanes * LANE_H;
 
-        Map<String, int[]> geo = new HashMap<>(); // x, y, w, h
+        Map<String, int[]> geo = new HashMap<>();
         for (ActivityNode n : nodes) {
             int c = colByNode.get(n.getId());
             int laneIdx = n.getPartitionId() != null
@@ -572,7 +608,6 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
     private int generateInstancesFor(BusinessPolicy policy,
                                      Map<String, List<User>> employeesByDept,
                                      List<User> clients) {
-        // Resolve department per partition (departmentId is guaranteed non-null here)
         Map<String, String> deptByPartition = new HashMap<>();
         for (ActivityPartition p : policy.getPartitions()) {
             deptByPartition.put(p.getId(), p.getDepartmentId());
@@ -602,6 +637,7 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
                     .minusHours(rnd.nextInt(24))
                     .minusMinutes(rnd.nextInt(60));
 
+            // 60% COMPLETED · 25% ACTIVE · 15% CANCELLED
             int roll = rnd.nextInt(100);
             InstanceStatus status = roll < 60 ? InstanceStatus.COMPLETED
                     : roll < 85 ? InstanceStatus.ACTIVE : InstanceStatus.CANCELLED;
@@ -618,7 +654,7 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
 
             int completedSteps = switch (status) {
                 case COMPLETED -> actions.size();
-                case ACTIVE -> Math.max(0, rnd.nextInt(actions.size()));
+                case ACTIVE    -> Math.max(0, rnd.nextInt(actions.size()));
                 case CANCELLED -> 1 + rnd.nextInt(Math.max(1, actions.size() - 1));
             };
 
@@ -640,7 +676,7 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
                 task.setAssignedAt(cursor);
 
                 if (s < completedSteps) {
-                    long waitSec = 300 + rnd.nextInt(7200);
+                    long waitSec = 300 + rnd.nextInt(7_200);
                     LocalDateTime taskStarted = cursor.plusSeconds(waitSec);
                     double empFactor = employeeSpeedFactor(emp.getId());
                     double variance = 0.5 + rnd.nextDouble() * 1.3;
@@ -655,18 +691,20 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
 
                     cursor = taskCompleted.plusMinutes(5 + rnd.nextInt(120));
                     currentNodeId = (s + 1 < actions.size()) ? actions.get(s + 1).nodeId() : finalNodeId;
+
                 } else if (s == completedSteps && status == InstanceStatus.ACTIVE) {
                     boolean claimed = rnd.nextBoolean();
                     if (claimed) {
                         task.setAssignedUserId(emp.getId());
                         task.setStatus(TaskStatus.IN_PROGRESS);
-                        task.setStartedAt(cursor.plusSeconds(300 + rnd.nextInt(3600)));
+                        task.setStartedAt(cursor.plusSeconds(300 + rnd.nextInt(3_600)));
                     } else {
                         task.setStatus(TaskStatus.PENDING);
                     }
                     tasks.add(task);
                     currentNodeId = action.nodeId();
                     break;
+
                 } else {
                     break;
                 }
@@ -688,17 +726,17 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
     }
 
     private long parseSla(Map<String, String> metadata) {
-        if (metadata == null) return 3600;
+        if (metadata == null) return 3_600;
         try {
             return Long.parseLong(metadata.getOrDefault("slaSeconds", "3600"));
         } catch (NumberFormatException e) {
-            return 3600;
+            return 3_600;
         }
     }
 
     /**
-     * Deterministic speed factor per employee so performance levels are stable:
-     * ~30% fast (GOOD), ~50% average, ~20% slow (POOR).
+     * Deterministic speed factor per employee — stable across runs.
+     * ~30% fast (bucket 0-2), ~50% average (3-7), ~20% slow (8-9).
      */
     private double employeeSpeedFactor(String userId) {
         int bucket = Math.floorMod(userId.hashCode(), 10);

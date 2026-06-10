@@ -66,9 +66,12 @@ public class S3Service {
                                                        String fileName,
                                                        String mimeType) {
         // Repository organized per policy AND per client (RF-1.4):
-        // /{policyId}/{clientId}/{processInstanceId}/{requirementId}/{uuid}_{filename}
+        // {policyId}/{clientId}/{processInstanceId}/{requirementId}/{uuid}_{filename}
+        // NOTE: no leading slash — a leading "/" yields a double-slash URL
+        // (bucket.s3.amazonaws.com//key) that some HTTP clients (e.g. the OnlyOffice
+        // downloader) normalize, breaking the SigV4 signature → S3 400.
         String clientSegment = (clientId != null && !clientId.isBlank()) ? clientId : "sin_cliente";
-        String key = "/" + policyId
+        String key = policyId
                 + "/" + clientSegment
                 + "/" + processInstanceId
                 + "/" + requirementId
@@ -130,6 +133,23 @@ public class S3Service {
     }
 
     /**
+     * Returns the size in bytes of an S3 object, or {@code -1} if it does not exist.
+     * Used to enforce {@code maxSizeBytes} at confirm time (RF-1.7).
+     */
+    public long getObjectSize(String s3Key) {
+        try (S3Client s3Client = S3Client.builder()
+                .region(Region.of(region))
+                .build()) {
+            return s3Client.headObject(HeadObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(s3Key)
+                    .build()).contentLength();
+        } catch (Exception e) {
+            return -1L;
+        }
+    }
+
+    /**
      * Uploads raw bytes to S3 server-side (RF-1.10). Used by the OnlyOffice callback to
      * persist a document edited collaboratively in the Document Server.
      */
@@ -144,6 +164,22 @@ public class S3Service {
                             .contentType(contentType != null ? contentType : "application/octet-stream")
                             .build(),
                     RequestBody.fromBytes(content));
+        }
+    }
+
+    /**
+     * Downloads an object's bytes server-side (RF-1.10). Used by the OnlyOffice content
+     * endpoint so the Document Server fetches the file through the backend instead of a
+     * presigned S3 URL.
+     */
+    public byte[] getObject(String s3Key) {
+        try (S3Client s3Client = S3Client.builder()
+                .region(Region.of(region))
+                .build()) {
+            return s3Client.getObjectAsBytes(GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(s3Key)
+                    .build()).asByteArray();
         }
     }
 

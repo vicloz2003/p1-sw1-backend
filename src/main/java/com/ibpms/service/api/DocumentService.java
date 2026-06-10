@@ -1,7 +1,9 @@
 package com.ibpms.service.api;
 
+import com.ibpms.dto.request.CreateBlankDocumentRequest;
 import com.ibpms.dto.request.InitiateDocumentUploadRequest;
 import com.ibpms.dto.request.InitiatePreProcessUploadRequest;
+import com.ibpms.dto.request.UpdateDocumentPermissionsRequest;
 import com.ibpms.dto.response.AuditLogResponse;
 import com.ibpms.dto.response.DocumentDownloadResponse;
 import com.ibpms.dto.response.DocumentResponse;
@@ -21,7 +23,8 @@ public interface DocumentService {
      */
     DocumentUploadInitiateResponse initiateUpload(InitiateDocumentUploadRequest request,
                                                    String userId,
-                                                   String userRole);
+                                                   String userRole,
+                                                   String departmentId);
 
     /**
      * Pre-process variant: generates a presigned PUT URL for a mandatory PROCESS_START
@@ -31,13 +34,14 @@ public interface DocumentService {
      */
     DocumentUploadInitiateResponse initiatePreProcessUpload(InitiatePreProcessUploadRequest request,
                                                              String userId,
-                                                             String userRole);
+                                                             String userRole,
+                                                             String departmentId);
 
     /**
      * Verifies the file exists in S3 (HeadObject) and marks the document CONFIRMED (RF-10).
      * Requires write permission on the document.
      */
-    DocumentResponse confirmUpload(String documentId, String userId, String userRole);
+    DocumentResponse confirmUpload(String documentId, String userId, String userRole, String departmentId);
 
     /**
      * Returns a presigned GET URL valid for 15 minutes and writes an audit log (RF-06).
@@ -46,6 +50,7 @@ public interface DocumentService {
     DocumentDownloadResponse download(String documentId,
                                        String userId,
                                        String userRole,
+                                       String departmentId,
                                        HttpServletRequest httpRequest);
 
     /** Lists all non-deleted documents for a process instance (RF-04). */
@@ -66,11 +71,39 @@ public interface DocumentService {
                                                String fileName,
                                                String mimeType,
                                                String userId,
-                                               String userRole);
+                                               String userRole,
+                                               String departmentId);
 
     /** Soft-deletes the document (sets status = DELETED). Requires delete permission. */
-    void delete(String documentId, String userId, String userRole, HttpServletRequest httpRequest);
+    void delete(String documentId, String userId, String userRole, String departmentId, HttpServletRequest httpRequest);
 
     /** Full audit trail for a document (RF-08). ADMIN_DESIGNER only. */
     List<AuditLogResponse> getAuditLog(String documentId);
+
+    /**
+     * RF-1.10: a functionary creates a blank Office document (Word/Excel/PowerPoint) at the
+     * node they are working. The new document is owned by the functionary's department
+     * (department-scoped ACL) so the whole department can co-edit it. Returns the created doc.
+     */
+    DocumentResponse createBlankDocument(CreateBlankDocumentRequest request,
+                                         String userId,
+                                         String userRole,
+                                         String departmentId);
+
+    /**
+     * RF-1.10 discovery: non-deleted documents the caller's department may access
+     * (its {@code departmentId} appears in canRead/canWrite) and whose trámite is active.
+     * This is the functionary's "my department documents" inbox.
+     */
+    List<DocumentResponse> listByDepartment(String departmentId);
+
+    /**
+     * Reassigns the document ACL (RF-1.5 / RF-1.9) and records a PERMISSION_CHANGE
+     * audit entry. ADMIN_DESIGNER only. A {@code null} list leaves that permission
+     * unchanged.
+     */
+    DocumentResponse updatePermissions(String documentId,
+                                       UpdateDocumentPermissionsRequest request,
+                                       String userId,
+                                       String userRole);
 }

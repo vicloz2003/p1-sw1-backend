@@ -10,6 +10,7 @@ public record RiskInstanceResponse(
         String processInstanceId,
         String clientId,
         String currentNodeId,
+        String currentNodeLabel,
         double elapsedHours,
         double riskScore,
         boolean anomaly,

@@ -123,10 +123,13 @@ public class ReportServiceImpl implements ReportService {
             long total = g.size();
             long completed = g.stream().filter(i -> i.getStatus() == InstanceStatus.COMPLETED).count();
             long cancelled = g.stream().filter(i -> i.getStatus() == InstanceStatus.CANCELLED).count();
+            LocalDateTime now = LocalDateTime.now();
             double avgDuration = g.stream()
-                    .filter(i -> i.getStatus() == InstanceStatus.COMPLETED
-                            && i.getStartedAt() != null && i.getCompletedAt() != null)
-                    .mapToDouble(i -> Duration.between(i.getStartedAt(), i.getCompletedAt()).toMinutes() / 60.0)
+                    .filter(i -> i.getStartedAt() != null)
+                    .mapToDouble(i -> {
+                        LocalDateTime end = i.getCompletedAt() != null ? i.getCompletedAt() : now;
+                        return Duration.between(i.getStartedAt(), end).toMinutes() / 60.0;
+                    })
                     .average().orElse(0.0);
             Map<String, Double> m = new HashMap<>();
             m.put("count", (double) total);

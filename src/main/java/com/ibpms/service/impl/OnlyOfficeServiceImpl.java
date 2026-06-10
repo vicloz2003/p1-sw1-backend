@@ -1,10 +1,14 @@
 package com.ibpms.service.impl;
 
+import com.ibpms.domain.DocumentAuditLog;
+import com.ibpms.domain.DocumentPermissions;
 import com.ibpms.domain.DocumentVersion;
 import com.ibpms.domain.ProcessDocument;
+import com.ibpms.domain.enums.DocumentAction;
 import com.ibpms.dto.request.OnlyOfficeCallbackRequest;
 import com.ibpms.dto.response.OnlyOfficeConfigResponse;
 import com.ibpms.exception.DocumentNotFoundException;
+import com.ibpms.repository.DocumentAuditLogRepository;
 import com.ibpms.repository.ProcessDocumentRepository;
 import com.ibpms.service.api.OnlyOfficeService;
 import io.jsonwebtoken.Jwts;
@@ -16,7 +20,9 @@ import javax.crypto.SecretKey;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,17 +37,20 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
     private static final int STATUS_FORCE_SAVE = 6;
 
     private final ProcessDocumentRepository documentRepository;
+    private final DocumentAuditLogRepository auditLogRepository;
     private final S3Service s3Service;
     private final String documentServerUrl;
     private final String callbackBaseUrl;
     private final SecretKey jwtKey;          // null if no secret configured (JWT disabled)
 
     public OnlyOfficeServiceImpl(ProcessDocumentRepository documentRepository,
+                                 DocumentAuditLogRepository auditLogRepository,
                                  S3Service s3Service,
                                  @Value("${onlyoffice.document-server-url}") String documentServerUrl,
                                  @Value("${onlyoffice.callback-base-url}") String callbackBaseUrl,
                                  @Value("${onlyoffice.jwt-secret:}") String jwtSecret) {
         this.documentRepository = documentRepository;
+        this.auditLogRepository = auditLogRepository;
         this.s3Service = s3Service;
         this.documentServerUrl = stripTrailingSlash(documentServerUrl);
         this.callbackBaseUrl = stripTrailingSlash(callbackBaseUrl);
@@ -50,21 +59,36 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
     }
 
     @Override
-    public OnlyOfficeConfigResponse buildEditorConfig(String documentId, String userId, String userRole) {
+    public OnlyOfficeConfigResponse buildEditorConfig(String documentId, String userId, String userRole,
+                                                      String departmentId, String ipAddress) {
         ProcessDocument doc = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         String fileName = doc.getFileName() != null ? doc.getFileName() : "document";
         String ext = extension(fileName);
         String documentType = documentType(ext);
-        boolean canEdit = canEdit(userRole, documentType);
+        // Edit vs view-only is resolved from the document ACL (RF-1.9): only principals in canWrite
+        // (the owning department, the owner, ADMIN) edit; everyone else with read opens view-only.
+        boolean canEdit = canWriteDoc(doc, userId, userRole, departmentId);
+
+        // RF-1.6: record who opened the document and when.
+        recordAudit(doc, userId, userRole, DocumentAction.VIEW, ipAddress,
+                "Abrió el documento en el editor (" + (canEdit ? "edición" : "solo lectura") + ")");
 
         // OnlyOffice caches by "key"; it MUST change whenever the stored content changes,
         // so we derive it from the current S3 key.
         String key = sanitizeKey(documentId + "_" + Integer.toHexString(
                 doc.getS3Key() != null ? doc.getS3Key().hashCode() : 0));
 
-        String fileUrl = s3Service.generatePresignedGetUrl(doc.getS3Key(), Duration.ofHours(1));
+        // The Document Server downloads the file from the backend (not a presigned S3 URL —
+        // its HTTP client mangles the SigV4 signature). Authenticated by a short-lived token.
+        String contentToken = (jwtKey != null)
+                ? Jwts.builder().subject(documentId)
+                        .expiration(Date.from(Instant.now().plus(Duration.ofHours(2))))
+                        .signWith(jwtKey).compact()
+                : "none";
+        String fileUrl = callbackBaseUrl + "/api/v1/documents/" + documentId
+                + "/onlyoffice/content?dt=" + contentToken;
         String callbackUrl = callbackBaseUrl + "/api/v1/documents/onlyoffice/callback?documentId=" + documentId;
 
         Map<String, Object> document = new LinkedHashMap<>();
@@ -81,11 +105,19 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
         user.put("id", userId);
         user.put("name", userId);
 
+        // customization: forceSave shows an explicit "Save" button; the DS immediately calls
+        // the callback with status=6 so the backend persists to S3 without closing the tab.
+        Map<String, Object> customization = new LinkedHashMap<>();
+        customization.put("forceSave", true);
+        customization.put("autosave", true);      // also auto-saves periodically in the DS cache
+        customization.put("spellcheck", false);   // reduces noise in the UI
+
         Map<String, Object> editorConfig = new LinkedHashMap<>();
         editorConfig.put("mode", canEdit ? "edit" : "view");
         editorConfig.put("callbackUrl", callbackUrl);
         editorConfig.put("user", user);
         editorConfig.put("lang", "es");
+        editorConfig.put("customization", customization);
 
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("documentType", documentType);
@@ -140,6 +172,40 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
         doc.setVersions(versions);
         doc.setS3Key(newKey);
         documentRepository.save(doc);
+
+        // RF-1.6: record who edited the document in this collaborative session.
+        List<String> editors = callback.users();
+        if (editors != null && !editors.isEmpty()) {
+            for (String editorId : editors) {
+                recordAudit(doc, editorId, null, DocumentAction.REPLACE, null,
+                        "Editó el documento vía OnlyOffice (sesión colaborativa)");
+            }
+        } else {
+            recordAudit(doc, null, null, DocumentAction.REPLACE, null,
+                    "Documento guardado vía OnlyOffice");
+        }
+    }
+
+    @Override
+    public DocumentContent getDocumentContent(String documentId, String token) {
+        // Validate the short-lived token issued in buildEditorConfig (defense-in-depth:
+        // the endpoint is public so the Document Server can reach it without a user JWT).
+        if (jwtKey != null) {
+            try {
+                String subject = Jwts.parser().verifyWith(jwtKey).build()
+                        .parseSignedClaims(token).getPayload().getSubject();
+                if (!documentId.equals(subject)) {
+                    throw new SecurityException("Token de contenido no corresponde al documento");
+                }
+            } catch (Exception e) {
+                throw new SecurityException("Token de contenido OnlyOffice inválido");
+            }
+        }
+
+        ProcessDocument doc = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        byte[] bytes = s3Service.getObject(doc.getS3Key());
+        return new DocumentContent(bytes, doc.getMimeType(), doc.getFileName());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -161,10 +227,32 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
         return oldKey.substring(0, slash + 1) + marker + "_" + oldKey.substring(slash + 1);
     }
 
-    private static boolean canEdit(String role, String documentType) {
-        // Office documents are edited by staff; clients open them read-only.
-        // Fine-grained per-department ACL (RF-1.9) refines this at the document level.
-        return "ADMIN_DESIGNER".equals(role) || "EMPLOYEE".equals(role);
+    /**
+     * Edit permission resolved from the document ACL (RF-1.9): a principal that appears in
+     * {@code canWrite} (by userId, role or departmentId) edits; ADMIN_DESIGNER always edits.
+     * Everyone else opens the document in view-only mode.
+     */
+    private boolean canWriteDoc(ProcessDocument doc, String userId, String userRole, String departmentId) {
+        if ("ADMIN_DESIGNER".equals(userRole)) return true;
+        DocumentPermissions p = doc.getPermissions();
+        if (p == null || p.getCanWrite() == null) return false;
+        List<String> w = p.getCanWrite();
+        if (w.contains(userId) || w.contains(userRole)) return true;
+        return departmentId != null && !departmentId.isBlank() && w.contains(departmentId);
+    }
+
+    private void recordAudit(ProcessDocument doc, String userId, String userRole,
+                             DocumentAction action, String ipAddress, String detail) {
+        DocumentAuditLog log = new DocumentAuditLog();
+        log.setDocumentId(doc.getId());
+        log.setProcessInstanceId(doc.getProcessInstanceId());
+        log.setUserId(userId);
+        log.setUserRole(userRole);
+        log.setAction(action);
+        log.setTimestamp(LocalDateTime.now());
+        log.setIpAddress(ipAddress);
+        log.setDetail(detail);
+        auditLogRepository.save(log);
     }
 
     private static String documentType(String ext) {

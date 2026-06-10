@@ -11,5 +11,7 @@ public record NodeProgressItem(
         String nodeLabel,
         String departmentName,
         String progressStatus,   // "COMPLETED" | "CURRENT" | "PENDING"
-        LocalDateTime completedAt
+        LocalDateTime completedAt,
+        String assignedToName,   // funcionario responsable de esta etapa (null si nadie la reclamó)
+        int documentCount        // documentos generados/adjuntos en esta etapa
 ) {}

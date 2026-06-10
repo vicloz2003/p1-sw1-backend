@@ -177,25 +177,37 @@ public class WorkflowEngineImpl implements WorkflowEngine {
         );
         messagingTemplate.convertAndSend("/topic/process/" + instance.getId(), stateNotification);
 
-        // FCM push to the CLIENT who initiated the process (RF-30)
+        // FCM push to the CLIENT who initiated the process (RF-30).
+        // Human-friendly copy by status — no technical jargon for the end user.
         if (instance.getClientId() != null) {
             String safeNodeLabel = currentNodeLabel != null ? currentNodeLabel : "";
+            String policyLabel = policy.getName() != null ? policy.getName() : "tu solicitud";
             userRepository.findById(instance.getClientId()).ifPresent(client -> {
                 String fcmToken = client.getFcmToken();
                 if (fcmToken != null && !fcmToken.isBlank()) {
+                    String title;
+                    String body;
+                    switch (instance.getStatus()) {
+                        case COMPLETED -> {
+                            title = "¡Trámite finalizado! 🎉";
+                            body = "Tu trámite de " + policyLabel + " ha sido completado.";
+                        }
+                        case CANCELLED -> {
+                            title = "Trámite cancelado";
+                            body = "Tu trámite de " + policyLabel + " fue cancelado.";
+                        }
+                        default -> {
+                            title = "Tu trámite avanzó";
+                            body = "Trámite de " + policyLabel + " — ahora en la etapa: " + safeNodeLabel + ".";
+                        }
+                    }
                     // Build payload defensively — Map.of() throws NPE on null values.
                     Map<String, String> data = new HashMap<>();
                     data.put("processInstanceId", instance.getId());
                     data.put("currentNodeLabel", safeNodeLabel);
                     data.put("status", instance.getStatus().name());
 
-                    pushNotificationService.sendToToken(
-                            fcmToken,
-                            "Estado de tu trámite actualizado",
-                            "Tu trámite ahora está en: " + safeNodeLabel
-                                    + " (" + instance.getStatus().name() + ").",
-                            data
-                    );
+                    pushNotificationService.sendToToken(fcmToken, title, body, data);
                 }
             });
         }

@@ -51,6 +51,13 @@ public class RiskServiceImpl implements RiskService {
         BusinessPolicy policy = policyRepository.findById(policyId).orElse(null);
         String policyName = policy != null ? policy.getName() : policyId;
 
+        // nodeId → human label, to enrich each instance's current node for the dashboard.
+        Map<String, String> nodeLabelById = new HashMap<>();
+        if (policy != null && policy.getNodes() != null) {
+            policy.getNodes().forEach(n -> nodeLabelById.put(n.getId(),
+                    n.getLabel() != null ? n.getLabel() : n.getId()));
+        }
+
         List<ProcessInstance> active = instanceRepository
                 .findByBusinessPolicyIdAndStatus(policyId, InstanceStatus.ACTIVE);
 
@@ -158,10 +165,12 @@ public class RiskServiceImpl implements RiskService {
         List<RiskInstanceResponse> instances = ml.assessments().stream()
                 .map(a -> {
                     ProcessInstance inst = instanceById.get(a.processInstanceId());
+                    String curNodeId = inst != null ? inst.getCurrentNodeId() : null;
                     return new RiskInstanceResponse(
                             a.processInstanceId(),
                             inst != null ? inst.getClientId() : null,
-                            inst != null ? inst.getCurrentNodeId() : null,
+                            curNodeId,
+                            curNodeId != null ? nodeLabelById.getOrDefault(curNodeId, curNodeId) : null,
                             round(elapsedHoursById.getOrDefault(a.processInstanceId(), 0.0)),
                             a.riskScore(), a.anomaly(), a.priority(),
                             a.drivers() != null ? a.drivers() : List.of(),
