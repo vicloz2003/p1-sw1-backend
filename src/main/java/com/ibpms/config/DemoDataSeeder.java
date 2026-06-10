@@ -28,6 +28,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -630,9 +631,10 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
         int count = 18 + rnd.nextInt(8); // 18–25 instances per policy
         List<ProcessInstance> instances = new ArrayList<>();
         List<ActivityTask> tasks = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
 
         for (int i = 0; i < count; i++) {
-            LocalDateTime startedAt = LocalDateTime.now()
+            LocalDateTime startedAt = now
                     .minusDays(rnd.nextInt(28))
                     .minusHours(rnd.nextInt(24))
                     .minusMinutes(rnd.nextInt(60));
@@ -643,6 +645,10 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
                     : roll < 85 ? InstanceStatus.ACTIVE : InstanceStatus.CANCELLED;
 
             User client = clients.get(rnd.nextInt(clients.size()));
+
+            // Tasks for THIS instance (collected locally so an ACTIVE instance's whole
+            // timeline can be shifted to be "recently in progress" before persisting).
+            List<ActivityTask> instTasks = new ArrayList<>();
 
             ProcessInstance instance = new ProcessInstance();
             instance.setBusinessPolicyId(policy.getId());
@@ -687,7 +693,7 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
                     task.setStatus(TaskStatus.COMPLETED);
                     task.setStartedAt(taskStarted);
                     task.setCompletedAt(taskCompleted);
-                    tasks.add(task);
+                    instTasks.add(task);
 
                     cursor = taskCompleted.plusMinutes(5 + rnd.nextInt(120));
                     currentNodeId = (s + 1 < actions.size()) ? actions.get(s + 1).nodeId() : finalNodeId;
@@ -701,7 +707,7 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
                     } else {
                         task.setStatus(TaskStatus.PENDING);
                     }
-                    tasks.add(task);
+                    instTasks.add(task);
                     currentNodeId = action.nodeId();
                     break;
 
@@ -716,7 +722,24 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
                 instance.setCompletedAt(cursor);
             } else if (status == InstanceStatus.CANCELLED) {
                 instance.setCompletedAt(cursor.plusHours(1 + rnd.nextInt(48)));
+            } else { // ACTIVE: shift the whole timeline so the instance is realistically in-flight.
+                // ~75% healthy: last activity was minutes-to-hours ago → elapsed tracks progress.
+                // ~25% stuck: last activity 1–5 days ago → elapsed ≫ progress → genuine anomaly.
+                boolean stuck = rnd.nextInt(100) < 25;
+                long idleGapSec = stuck
+                        ? Duration.ofDays(1).plusHours(rnd.nextInt(96)).getSeconds()
+                        : 300L + rnd.nextInt(7_200); // 5 min – 2 h
+                LocalDateTime targetLast = now.minusSeconds(idleGapSec);
+                long shiftSec = Duration.between(cursor, targetLast).getSeconds();
+                startedAt = startedAt.plusSeconds(shiftSec);
+                instance.setStartedAt(startedAt);
+                for (ActivityTask t : instTasks) {
+                    if (t.getAssignedAt() != null)  t.setAssignedAt(t.getAssignedAt().plusSeconds(shiftSec));
+                    if (t.getStartedAt() != null)   t.setStartedAt(t.getStartedAt().plusSeconds(shiftSec));
+                    if (t.getCompletedAt() != null) t.setCompletedAt(t.getCompletedAt().plusSeconds(shiftSec));
+                }
             }
+            tasks.addAll(instTasks);
             instances.add(instance);
         }
 
