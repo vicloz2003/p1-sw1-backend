@@ -188,7 +188,7 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
         List<BusinessPolicy> policies = new ArrayList<>();
 
         // ── 1) Instalación de Nuevo Medidor (ACTIVE) ─────────────────────────
-        policies.add(buildPolicy(
+        BusinessPolicy instalacion = buildPolicy(
                 "Instalacion de Nuevo Medidor",
                 "Proceso completo para instalar un medidor eléctrico en un nuevo punto de suministro.",
                 List.of("medidor", "instalacion", "nuevo-servicio", "electricidad"),
@@ -242,7 +242,10 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
                            "Plano eléctrico interno del inmueble (opcional para residencial)",
                            List.of("application/pdf"), false)
                 ),
-                deptByName, adminId, PolicyStatus.ACTIVE));
+                deptByName, adminId, PolicyStatus.ACTIVE);
+        // Inject a DECISION point so the DL route predictor has a real branch to advise on.
+        injectDecisionNode(instalacion);
+        policies.add(instalacion);
 
         // ── 2) Reconexión de Servicio Eléctrico (ACTIVE) ─────────────────────
         policies.add(buildPolicy(
@@ -414,6 +417,51 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
         return policy;
     }
 
+    /**
+     * Inserts a DECISION node with three archetype branches into a linear policy, re-wiring
+     * {@code action_1 → DECISION → [Vía Rápida | Revisión Completa | Inspección de Campo] → action_2}.
+     * Gives the DL route predictor (RF-3.1) a genuine decision point to advise on.
+     *
+     * @return the id of the inserted DECISION node
+     */
+    private String injectDecisionNode(BusinessPolicy policy) {
+        List<ActivityNode> nodes = new ArrayList<>(policy.getNodes());
+        List<ControlFlow> flows = new ArrayList<>(policy.getFlows());
+
+        ActivityNode anchor = nodes.stream()
+                .filter(n -> "node_action_1".equals(n.getId())).findFirst().orElse(null);
+        if (anchor == null) return null;
+        String lane = anchor.getPartitionId();
+        String rejoin = "node_action_2";
+
+        // Detach the original straight edge action_1 → action_2.
+        flows.removeIf(f -> "node_action_1".equals(f.getSourceNodeId())
+                && rejoin.equals(f.getTargetNodeId()));
+
+        String decId = "node_decision_fact";
+        nodes.add(node(decId, "Evaluacion de Factibilidad", lane, NodeType.DECISION, null));
+        flows.add(flow("node_action_1", decId));
+
+        // Three branches whose labels match the model's route archetypes; all rejoin at action_2.
+        String[][] branches = {
+                {"node_branch_rapida",   "Via Rapida"},
+                {"node_branch_revision", "Revision Completa"},
+                {"node_branch_campo",    "Inspeccion de Campo"},
+        };
+        for (String[] b : branches) {
+            Map<String, String> meta = new HashMap<>();
+            meta.put("slaSeconds", "7200");
+            nodes.add(nodeWithForm(b[0], b[1], lane, NodeType.ACTION, meta, new HashMap<>()));
+            flows.add(flow(decId, b[0]));
+            flows.add(flow(b[0], rejoin));
+        }
+
+        policy.setNodes(nodes);
+        policy.setFlows(flows);
+        policy.setBpmnXml(generateBpmnXml(policy.getName(), policy.getPartitions(), nodes, flows));
+        return decId;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // BPMN XML generation (so seeded policies render in the designer)
     // ─────────────────────────────────────────────────────────────────────────
@@ -494,6 +542,9 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
                 case ACTIVITY_FINAL -> sb.append("    <bpmn:endEvent id=\"").append(n.getId())
                         .append("\" name=\"").append(xml(n.getLabel())).append("\">")
                         .append(inc).append("</bpmn:endEvent>\n");
+                case DECISION -> sb.append("    <bpmn:exclusiveGateway id=\"").append(n.getId())
+                        .append("\" name=\"").append(xml(n.getLabel())).append("\">")
+                        .append(inc).append(out).append("</bpmn:exclusiveGateway>\n");
                 default -> { }
             }
         }
@@ -745,7 +796,107 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
 
         instanceRepository.saveAll(instances);
         taskRepository.saveAll(tasks);
-        return instances.size();
+
+        // Park a few ACTIVE instances at the DECISION node (if the policy has one) with varied
+        // decision-time context, so the DL route predictor has real instances to advise on.
+        String decisionNodeId = policy.getNodes().stream()
+                .filter(n -> n.getType() == NodeType.DECISION)
+                .map(ActivityNode::getId).findFirst().orElse(null);
+        int parked = decisionNodeId != null
+                ? addDecisionInstances(policy, decisionNodeId, clients) : 0;
+
+        return instances.size() + parked;
+    }
+
+    /**
+     * Creates ACTIVE instances stopped at a DECISION node, each carrying a different decision-time
+     * context, so the route predictor demonstrates distinct recommendations (Vía Rápida / Revisión /
+     * Inspección de Campo) on real seeded data.
+     */
+    private int addDecisionInstances(BusinessPolicy policy, String decisionNodeId, List<User> clients) {
+        if (clients.isEmpty()) return 0;
+        LocalDateTime now = LocalDateTime.now();
+        // amount, clientSegment, complexity, docCompleteness, zoneRural, priorIssues
+        double[][] contexts = {
+                {0.10, 0.0, 0.10, 0.95, 0.0, 0.00},  // simple, residencial, urbano → Vía Rápida
+                {0.90, 1.0, 0.30, 0.40, 0.0, 0.20},  // monto alto, docs incompletos → Revisión Completa
+                {0.40, 0.5, 0.90, 0.70, 1.0, 0.10},  // complejo + rural → Inspección de Campo
+                {0.55, 0.5, 0.55, 0.75, 0.0, 0.30},  // caso mixto
+        };
+        List<ProcessInstance> parked = new ArrayList<>();
+        for (int i = 0; i < contexts.length; i++) {
+            double[] c = contexts[i];
+            User client = clients.get(i % clients.size());
+            ProcessInstance inst = new ProcessInstance();
+            inst.setBusinessPolicyId(policy.getId());
+            inst.setInitiatedBy(client.getId());
+            inst.setClientId(client.getId());
+            inst.setCurrentNodeId(decisionNodeId);
+            inst.setStatus(InstanceStatus.ACTIVE);
+            inst.setStartedAt(now.minusHours(2L + i));
+            Map<String, Object> ctx = new HashMap<>();
+            ctx.put("amount", c[0]);
+            ctx.put("clientSegment", c[1]);
+            ctx.put("complexity", c[2]);
+            ctx.put("docCompleteness", c[3]);
+            ctx.put("zoneRural", c[4]);
+            ctx.put("priorIssues", c[5]);
+            ctx.put("businessWeight", c[0]);
+            inst.setContextData(ctx);
+            parked.add(inst);
+        }
+        instanceRepository.saveAll(parked);
+        return parked.size();
+    }
+
+    /**
+     * Augments a policy's graph with a DECISION node and three archetype branches so the DL route
+     * predictor (RF-3.1) has a real decision point to advise on. Inserts the gateway between the
+     * 2nd action and the 3rd; branch order matches the predictor's archetypes
+     * (Vía Rápida / Revisión Completa / Inspección de Campo).
+     */
+    private void addRoutingShowcase(BusinessPolicy policy) {
+        final String afterId = "node_action_1";   // after "Inspección de Factibilidad"
+        final String nextId  = "node_action_2";    // before "Firma de Contrato"
+        if (policy.getNodes().stream().noneMatch(n -> afterId.equals(n.getId()))
+                || policy.getNodes().stream().noneMatch(n -> nextId.equals(n.getId()))) {
+            return; // graph shape not as expected — skip safely
+        }
+
+        List<ActivityNode> nodes = new ArrayList<>(policy.getNodes());
+        List<ControlFlow> flows = new ArrayList<>(policy.getFlows());
+        String partitionId = nodes.stream().filter(n -> afterId.equals(n.getId()))
+                .map(ActivityNode::getPartitionId).findFirst().orElse(null);
+
+        final String decisionId = "node_decision_route";
+        final String fastId = "node_branch_fast", reviewId = "node_branch_review",
+                     fieldId = "node_branch_field";
+
+        nodes.add(node(decisionId, "¿Tipo de tramitación?", partitionId, NodeType.DECISION, null));
+        nodes.add(node(fastId,   "Aprobacion Directa",           partitionId, NodeType.ACTION, slaMeta(3_600)));
+        nodes.add(node(reviewId, "Revision Documental Completa", partitionId, NodeType.ACTION, slaMeta(14_400)));
+        nodes.add(node(fieldId,  "Inspeccion de Campo",          partitionId, NodeType.ACTION, slaMeta(21_600)));
+
+        // Rewire action_1 → decision → {fast|review|field} → action_2 (branch order = archetypes).
+        flows.removeIf(f -> afterId.equals(f.getSourceNodeId()) && nextId.equals(f.getTargetNodeId()));
+        flows.add(flow(afterId, decisionId));
+        flows.add(flow(decisionId, fastId));
+        flows.add(flow(decisionId, reviewId));
+        flows.add(flow(decisionId, fieldId));
+        flows.add(flow(fastId,   nextId));
+        flows.add(flow(reviewId, nextId));
+        flows.add(flow(fieldId,  nextId));
+
+        policy.setNodes(nodes);
+        policy.setFlows(flows);
+        policy.setBpmnXml(generateBpmnXml(policy.getName(), policy.getPartitions(), nodes, flows));
+        policyRepository.save(policy);
+    }
+
+    private Map<String, String> slaMeta(long slaSeconds) {
+        Map<String, String> m = new HashMap<>();
+        m.put("slaSeconds", String.valueOf(slaSeconds));
+        return m;
     }
 
     private long parseSla(Map<String, String> metadata) {

@@ -106,7 +106,11 @@ public class RouteAdvisorServiceImpl implements RouteAdvisorService {
         context.put("amount", clamp(num(ctx, "amount", 0.0)));
         context.put("clientSegment", clamp(num(ctx, "clientSegment", 0.0)));
         context.put("complexity", clamp(num(ctx, "complexity", 0.0)));
-        context.put("docCompleteness", clamp(docCompleteness(inst, policy)));
+        // Prefer an explicit docCompleteness from the form data; otherwise derive it from the
+        // real document repository.
+        double docComp = ctx.containsKey("docCompleteness")
+                ? num(ctx, "docCompleteness", 0.0) : docCompleteness(inst, policy);
+        context.put("docCompleteness", clamp(docComp));
         context.put("zoneRural", clamp(num(ctx, "zoneRural", 0.0)));
         context.put("priorIssues", clamp(num(ctx, "priorIssues", 0.0)));
 
@@ -139,6 +143,16 @@ public class RouteAdvisorServiceImpl implements RouteAdvisorService {
                 inst.getId(), decisionNodeId, decisionLabel,
                 ml.recommendedBranchId(), ml.recommendedLabel(),
                 ml.confidence(), ml.confident(), ranking, ml.rationale(), ml.modelInfo());
+    }
+
+    @Override
+    public Object modelMetrics() {
+        try {
+            return mlRestClient.get().uri("/route/metrics").retrieve().body(Object.class);
+        } catch (Exception e) {
+            throw new AgentUnavailableException(
+                    "Métricas del modelo no disponibles (servicio de IA no disponible).", e);
+        }
     }
 
     // ── feature helpers ────────────────────────────────────────────────────────
