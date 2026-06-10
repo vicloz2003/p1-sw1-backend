@@ -13,8 +13,10 @@ public record RiskInstanceResponse(
         String currentNodeLabel,
         double elapsedHours,
         double riskScore,
+        double delayProbability,
         boolean anomaly,
         String priority,
+        double priorityScore,
         List<String> drivers,
         String recommendation
 ) {}

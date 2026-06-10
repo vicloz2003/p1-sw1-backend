@@ -130,6 +130,11 @@ public class RiskServiceImpl implements RiskService {
 
             double reworkRatio = total > 0 ? (double) (total - distinctNodes) / total : 0.0;
 
+            // businessWeight: importance of the instance for resource-priority (RF-3.4). Read
+            // generically from the form data; neutral default when absent. Policy-agnostic.
+            double businessWeight = clamp01(num(inst.getContextData(), "businessWeight",
+                    num(inst.getContextData(), "amount", 0.0)));
+
             Map<String, Object> f = new LinkedHashMap<>();
             f.put("processInstanceId", inst.getId());
             f.put("policyId", policyId);
@@ -140,6 +145,7 @@ public class RiskServiceImpl implements RiskService {
             f.put("reassignmentRatio", round(reassignmentRatio));
             f.put("bottleneckPressure", round(bottleneckPressure));
             f.put("reworkRatio", round(reworkRatio));
+            f.put("businessWeight", round(businessWeight));
             featurePayload.add(f);
         }
 
@@ -172,11 +178,12 @@ public class RiskServiceImpl implements RiskService {
                             curNodeId,
                             curNodeId != null ? nodeLabelById.getOrDefault(curNodeId, curNodeId) : null,
                             round(elapsedHoursById.getOrDefault(a.processInstanceId(), 0.0)),
-                            a.riskScore(), a.anomaly(), a.priority(),
+                            a.riskScore(), a.delayProbability(), a.anomaly(),
+                            a.priority(), a.priorityScore(),
                             a.drivers() != null ? a.drivers() : List.of(),
                             a.recommendation());
                 })
-                .sorted(Comparator.comparingDouble(RiskInstanceResponse::riskScore).reversed())
+                .sorted(Comparator.comparingDouble(RiskInstanceResponse::priorityScore).reversed())
                 .toList();
 
         long anomalies = instances.stream().filter(RiskInstanceResponse::anomaly).count();
@@ -212,11 +219,27 @@ public class RiskServiceImpl implements RiskService {
         return Math.round(v * 10000.0) / 10000.0;
     }
 
+    /** Read a numeric feature from the instance's form data; tolerant of Number or String. */
+    private static double num(Map<String, Object> ctx, String key, double dflt) {
+        if (ctx == null) return dflt;
+        Object v = ctx.get(key);
+        if (v instanceof Number n) return n.doubleValue();
+        if (v instanceof String s) {
+            try { return Double.parseDouble(s.trim()); } catch (NumberFormatException ignored) { }
+        }
+        return dflt;
+    }
+
+    private static double clamp01(double v) {
+        return Math.max(0.0, Math.min(1.0, v));
+    }
+
     // ── ibpms_ml response mapping ──────────────────────────────────────────────
 
     private record MlRiskResponse(List<MlAssessment> assessments, double threshold, String modelInfo) {}
 
     private record MlAssessment(
-            String processInstanceId, double riskScore, boolean anomaly, String priority,
-            double reconstructionError, List<String> drivers, String recommendation) {}
+            String processInstanceId, double riskScore, double delayProbability, boolean anomaly,
+            String priority, double priorityScore, double reconstructionError,
+            List<String> drivers, String recommendation) {}
 }
