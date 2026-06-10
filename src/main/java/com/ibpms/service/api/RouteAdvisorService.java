@@ -18,4 +18,7 @@ public interface RouteAdvisorService {
      * @param nodeId     the decision node to evaluate; {@code null} ⇒ the instance's current node
      */
     RouteAdvisoryResponse adviseForInstance(String instanceId, String nodeId);
+
+    /** Proxies the DL models' evaluation metrics (accuracy, AUC, detection rate) for transparency. */
+    Object modelMetrics();
 }

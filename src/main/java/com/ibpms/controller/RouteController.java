@@ -42,4 +42,10 @@ public class RouteController {
             @RequestParam(required = false) String nodeId) {
         return ResponseEntity.ok(routeAdvisorService.adviseForInstance(instanceId, nodeId));
     }
+
+    /** DL models' evaluation metrics (accuracy, AUC, detection rate) — for transparency/defense. */
+    @GetMapping("/metrics")
+    public ResponseEntity<Object> metrics() {
+        return ResponseEntity.ok(routeAdvisorService.modelMetrics());
+    }
 }

@@ -849,56 +849,6 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
         return parked.size();
     }
 
-    /**
-     * Augments a policy's graph with a DECISION node and three archetype branches so the DL route
-     * predictor (RF-3.1) has a real decision point to advise on. Inserts the gateway between the
-     * 2nd action and the 3rd; branch order matches the predictor's archetypes
-     * (Vía Rápida / Revisión Completa / Inspección de Campo).
-     */
-    private void addRoutingShowcase(BusinessPolicy policy) {
-        final String afterId = "node_action_1";   // after "Inspección de Factibilidad"
-        final String nextId  = "node_action_2";    // before "Firma de Contrato"
-        if (policy.getNodes().stream().noneMatch(n -> afterId.equals(n.getId()))
-                || policy.getNodes().stream().noneMatch(n -> nextId.equals(n.getId()))) {
-            return; // graph shape not as expected — skip safely
-        }
-
-        List<ActivityNode> nodes = new ArrayList<>(policy.getNodes());
-        List<ControlFlow> flows = new ArrayList<>(policy.getFlows());
-        String partitionId = nodes.stream().filter(n -> afterId.equals(n.getId()))
-                .map(ActivityNode::getPartitionId).findFirst().orElse(null);
-
-        final String decisionId = "node_decision_route";
-        final String fastId = "node_branch_fast", reviewId = "node_branch_review",
-                     fieldId = "node_branch_field";
-
-        nodes.add(node(decisionId, "¿Tipo de tramitación?", partitionId, NodeType.DECISION, null));
-        nodes.add(node(fastId,   "Aprobacion Directa",           partitionId, NodeType.ACTION, slaMeta(3_600)));
-        nodes.add(node(reviewId, "Revision Documental Completa", partitionId, NodeType.ACTION, slaMeta(14_400)));
-        nodes.add(node(fieldId,  "Inspeccion de Campo",          partitionId, NodeType.ACTION, slaMeta(21_600)));
-
-        // Rewire action_1 → decision → {fast|review|field} → action_2 (branch order = archetypes).
-        flows.removeIf(f -> afterId.equals(f.getSourceNodeId()) && nextId.equals(f.getTargetNodeId()));
-        flows.add(flow(afterId, decisionId));
-        flows.add(flow(decisionId, fastId));
-        flows.add(flow(decisionId, reviewId));
-        flows.add(flow(decisionId, fieldId));
-        flows.add(flow(fastId,   nextId));
-        flows.add(flow(reviewId, nextId));
-        flows.add(flow(fieldId,  nextId));
-
-        policy.setNodes(nodes);
-        policy.setFlows(flows);
-        policy.setBpmnXml(generateBpmnXml(policy.getName(), policy.getPartitions(), nodes, flows));
-        policyRepository.save(policy);
-    }
-
-    private Map<String, String> slaMeta(long slaSeconds) {
-        Map<String, String> m = new HashMap<>();
-        m.put("slaSeconds", String.valueOf(slaSeconds));
-        return m;
-    }
-
     private long parseSla(Map<String, String> metadata) {
         if (metadata == null) return 3_600;
         try {
