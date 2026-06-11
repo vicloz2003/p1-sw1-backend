@@ -51,7 +51,8 @@ public class PushNotificationService {
                 data.forEach(builder::putData);
             }
             String messageId = FirebaseMessaging.getInstance().send(builder.build());
-            log.debug("[FCM] Sent to token {}: messageId={}", fcmToken, messageId);
+            log.info("[FCM] Sent to token ...{}: messageId={}",
+                    fcmToken.substring(Math.max(0, fcmToken.length() - 8)), messageId);
         } catch (FirebaseMessagingException e) {
             log.warn("[FCM] Failed to send to token {}: {}", fcmToken, e.getMessage());
         }
@@ -86,7 +87,7 @@ public class PushNotificationService {
                 data.forEach(builder::putData);
             }
             var response = FirebaseMessaging.getInstance().sendEachForMulticast(builder.build());
-            log.debug("[FCM] Multicast: {} success, {} failure(s) out of {} tokens.",
+            log.info("[FCM] Multicast: {} success, {} failure(s) out of {} tokens.",
                     response.getSuccessCount(), response.getFailureCount(), fcmTokens.size());
         } catch (FirebaseMessagingException e) {
             log.warn("[FCM] Multicast failed: {}", e.getMessage());
