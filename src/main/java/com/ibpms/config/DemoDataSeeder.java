@@ -443,16 +443,19 @@ public class DemoDataSeeder implements ApplicationListener<ApplicationReadyEvent
         flows.add(flow("node_action_1", decId));
 
         // Three branches whose labels match the model's route archetypes; all rejoin at action_2.
+        // The DECISION routes on the inspection result captured at node_action_1 (field
+        // "factibilidad"). Guards are SpEL over #data (ProcessInstance.contextData). The
+        // NO_FACTIBLE path is the default/else branch (null guard) so the flow never stalls.
         String[][] branches = {
-                {"node_branch_rapida",   "Via Rapida"},
-                {"node_branch_revision", "Revision Completa"},
-                {"node_branch_campo",    "Inspeccion de Campo"},
+                {"node_branch_rapida",   "Via Rapida",          "#data['factibilidad'] == 'FACTIBLE'"},
+                {"node_branch_campo",    "Inspeccion de Campo", "#data['factibilidad'] == 'FACTIBLE_CON_ADECUACIONES'"},
+                {"node_branch_revision", "Revision Completa",   null},
         };
         for (String[] b : branches) {
             Map<String, String> meta = new HashMap<>();
             meta.put("slaSeconds", "7200");
             nodes.add(nodeWithForm(b[0], b[1], lane, NodeType.ACTION, meta, new HashMap<>()));
-            flows.add(flow(decId, b[0]));
+            flows.add(new ControlFlow("flow_" + decId + "_" + b[0], decId, b[0], b[2]));
             flows.add(flow(b[0], rejoin));
         }
 
