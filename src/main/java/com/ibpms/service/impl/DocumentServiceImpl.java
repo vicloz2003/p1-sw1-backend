@@ -277,6 +277,41 @@ public class DocumentServiceImpl implements DocumentService {
         return new DocumentDownloadResponse(doc.getId(), doc.getFileName(), presignedUrl, expiresAt);
     }
 
+    @Override
+    public DocumentDownloadResponse downloadVersion(String documentId,
+                                                    String versionId,
+                                                    String userId,
+                                                    String userRole,
+                                                    String departmentId,
+                                                    HttpServletRequest httpRequest) {
+        ProcessDocument doc = findDoc(documentId);
+
+        if (!canRead(doc, userId, userRole, departmentId)) {
+            saveAuditLog(doc.getId(), doc.getProcessInstanceId(), userId, userRole,
+                    DocumentAction.PERMISSION_CHECK_FAILED, extractIp(httpRequest),
+                    "Read access denied (version " + versionId + ")");
+            throw new DocumentAccessDeniedException(
+                    "You do not have read access to document: " + documentId);
+        }
+
+        DocumentVersion version = (doc.getVersions() == null ? List.<DocumentVersion>of() : doc.getVersions())
+                .stream()
+                .filter(v -> versionId.equals(v.getVersionId()))
+                .findFirst()
+                .orElseThrow(() -> new DocumentNotFoundException(
+                        "Version not found: " + versionId + " on document " + documentId));
+
+        Duration expiry = Duration.ofMinutes(15);
+        String presignedUrl = s3Service.generatePresignedGetUrl(version.getS3Key(), expiry);
+        LocalDateTime expiresAt = LocalDateTime.now().plus(expiry);
+
+        saveAuditLog(doc.getId(), doc.getProcessInstanceId(), userId, userRole,
+                DocumentAction.DOWNLOAD, extractIp(httpRequest),
+                "Presigned GET URL issued for version " + versionId);
+
+        return new DocumentDownloadResponse(doc.getId(), doc.getFileName(), presignedUrl, expiresAt);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // RF-04: List documents by instance
     // ─────────────────────────────────────────────────────────────────────────

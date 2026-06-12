@@ -102,6 +102,23 @@ public class DocumentController {
     }
 
     /**
+     * RF-07: Download a specific historical version of a document (presigned GET URL).
+     * Requires read permission. Writes audit log.
+     */
+    @GetMapping("/{id}/versions/{versionId}/download")
+    public ResponseEntity<DocumentDownloadResponse> downloadVersion(
+            @PathVariable String id,
+            @PathVariable String versionId,
+            Authentication authentication,
+            @RequestAttribute(value = "departmentId", required = false) String departmentId,
+            HttpServletRequest httpRequest) {
+        String userId = (String) authentication.getPrincipal();
+        String userRole = authentication.getAuthorities().iterator().next().getAuthority();
+        return ResponseEntity.ok(
+                documentService.downloadVersion(id, versionId, userId, userRole, departmentId, httpRequest));
+    }
+
+    /**
      * RF-07: Upload a new version of an existing document.
      * Returns a fresh presigned PUT URL. Requires write permission.
      */

@@ -53,6 +53,17 @@ public interface DocumentService {
                                        String departmentId,
                                        HttpServletRequest httpRequest);
 
+    /**
+     * Returns a presigned GET URL (15 min) for a specific historical version of the
+     * document and writes an audit log (RF-07 version control). Requires read permission.
+     */
+    DocumentDownloadResponse downloadVersion(String documentId,
+                                             String versionId,
+                                             String userId,
+                                             String userRole,
+                                             String departmentId,
+                                             HttpServletRequest httpRequest);
+
     /** Lists all non-deleted documents for a process instance (RF-04). */
     List<DocumentResponse> listByInstance(String processInstanceId);
 
