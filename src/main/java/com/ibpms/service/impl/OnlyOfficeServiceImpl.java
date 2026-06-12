@@ -8,8 +8,10 @@ import com.ibpms.domain.enums.DocumentAction;
 import com.ibpms.dto.request.OnlyOfficeCallbackRequest;
 import com.ibpms.dto.response.OnlyOfficeConfigResponse;
 import com.ibpms.exception.DocumentNotFoundException;
+import com.ibpms.domain.User;
 import com.ibpms.repository.DocumentAuditLogRepository;
 import com.ibpms.repository.ProcessDocumentRepository;
+import com.ibpms.repository.UserRepository;
 import com.ibpms.service.api.OnlyOfficeService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -39,6 +41,7 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
     private final ProcessDocumentRepository documentRepository;
     private final DocumentAuditLogRepository auditLogRepository;
     private final S3Service s3Service;
+    private final UserRepository userRepository;
     private final String documentServerUrl;
     private final String callbackBaseUrl;
     private final SecretKey jwtKey;          // null if no secret configured (JWT disabled)
@@ -46,12 +49,14 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
     public OnlyOfficeServiceImpl(ProcessDocumentRepository documentRepository,
                                  DocumentAuditLogRepository auditLogRepository,
                                  S3Service s3Service,
+                                 UserRepository userRepository,
                                  @Value("${onlyoffice.document-server-url}") String documentServerUrl,
                                  @Value("${onlyoffice.callback-base-url}") String callbackBaseUrl,
                                  @Value("${onlyoffice.jwt-secret:}") String jwtSecret) {
         this.documentRepository = documentRepository;
         this.auditLogRepository = auditLogRepository;
         this.s3Service = s3Service;
+        this.userRepository = userRepository;
         this.documentServerUrl = stripTrailingSlash(documentServerUrl);
         this.callbackBaseUrl = stripTrailingSlash(callbackBaseUrl);
         this.jwtKey = (jwtSecret != null && jwtSecret.getBytes(StandardCharsets.UTF_8).length >= 32)
@@ -101,9 +106,15 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
         docPerms.put("download", true);
         document.put("permissions", docPerms);
 
+        // Human-readable co-editor identity so OnlyOffice shows real names/cursors
+        // (not the raw id) during collaborative editing (RF-1.10).
+        String userName = userRepository.findById(userId)
+                .map(User::getUsername)
+                .filter(n -> n != null && !n.isBlank())
+                .orElse(userId);
         Map<String, Object> user = new LinkedHashMap<>();
         user.put("id", userId);
-        user.put("name", userId);
+        user.put("name", userName);
 
         // customization: forceSave shows an explicit "Save" button; the DS immediately calls
         // the callback with status=6 so the backend persists to S3 without closing the tab.
